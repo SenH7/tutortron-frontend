@@ -28,7 +28,7 @@ const CTASection = () => {
           </Button>
         </div>
         <p className="mt-6 text-sm text-blue-100">
-          No credit card required. Start with a free 14-day trial.
+          Free for every students.
         </p>
       </div>
     </section>

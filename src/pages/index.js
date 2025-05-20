@@ -1,3 +1,6 @@
+// src/pages/index.js
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { Geist, Geist_Mono } from "next/font/google";
 
@@ -23,6 +26,32 @@ const geistMono = Geist_Mono({
 });
 
 export default function Home() {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check if user is already logged in, redirect to chat if yes
+  useEffect(() => {
+    const user = localStorage.getItem('tutortronUser');
+    if (user) {
+      router.push('/chat');
+    } else {
+      setIsLoading(false);
+    }
+  }, [router]);
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-12 w-12 mx-auto mb-4 border-t-2 border-b-2 border-foreground rounded-full animate-spin"></div>
+          <h1 className="text-xl font-medium">Loading Tutortron...</h1>
+        </div>
+      </div>
+    );
+  }
+
+  // Show landing page for non-authenticated users
   return (
     <div className={`${geistSans.variable} ${geistMono.variable} font-[family-name:var(--font-geist-sans)]`}>
       <Head>
