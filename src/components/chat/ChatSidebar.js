@@ -2,15 +2,15 @@ import { useState, useEffect } from 'react';
 import Button from '../ui/Button';
 
 const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
-    const [, setIsLoggedIn] = useState(false);
-  
-    // Check if user is logged in
-    useEffect(() => {
-      const user = localStorage.getItem('tutortronUser');
-      setIsLoggedIn(!!user);
-    }, []);
+  const [, setIsLoggedIn] = useState(false);
 
-    const handleLogout = () => {
+  // Check if user is logged in
+  useEffect(() => {
+    const user = localStorage.getItem('tutortronUser');
+    setIsLoggedIn(!!user);
+  }, []);
+
+  const handleLogout = () => {
     localStorage.removeItem('tutortronUser');
     setIsLoggedIn(false);
     window.location.href = '/login';
@@ -19,14 +19,14 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
     <>
       {/* Mobile sidebar overlay */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
           onClick={onClose}
         />
       )}
-      
+
       {/* Sidebar */}
-      <div 
+      <div
         className={`
           fixed md:relative top-0 bottom-0 left-0 z-50 
           w-72 bg-white dark:bg-black/10 border-r border-gray-200 dark:border-gray-800
@@ -42,7 +42,7 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
             </div>
             <span className="text-lg font-bold">Tutortron</span>
           </div>
-          <button 
+          <button
             className="md:hidden text-gray-500 hover:text-gray-700"
             onClick={onClose}
             aria-label="Close sidebar"
@@ -52,10 +52,10 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
             </svg>
           </button>
         </div>
-        
+
         {/* New chat button */}
         <div className="p-4">
-          <Button 
+          <Button
             onClick={onNewChat}
             className="w-full justify-center gap-2"
           >
@@ -65,7 +65,7 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
             New chat
           </Button>
         </div>
-        
+
         {/* Chat history */}
         <div className="flex-1 overflow-y-auto p-4">
           <h3 className="text-xs uppercase text-gray-500 font-semibold mb-2">Chat History</h3>
@@ -74,7 +74,7 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
               <li key={chat.id}>
                 <button
                   className="w-full text-left py-2 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-sm"
-                  onClick={() => {/* Load this chat */}}
+                  onClick={() => {/* Load this chat */ }}
                 >
                   <div className="truncate font-medium">{chat.title}</div>
                   <div className="text-xs text-gray-500">{new Date(chat.date).toLocaleDateString()}</div>
@@ -86,7 +86,7 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
             )}
           </ul>
         </div>
-        
+
         {/* User profile and logout */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-800">
           <div className="flex items-center gap-3 mb-3">
@@ -98,7 +98,7 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
               <div className="text-xs text-gray-500">{user?.email || 'student@example.com'}</div>
             </div>
           </div>
-          <Button 
+          <Button
             onClick={handleLogout}
             className="w-full justify-center"
           >

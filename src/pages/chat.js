@@ -23,11 +23,7 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState([
-    { id: 'chat1', title: 'Help with Algebra', date: '2025-05-18' },
-    { id: 'chat2', title: 'Understanding Photosynthesis', date: '2025-05-17' },
-    { id: 'chat3', title: 'Spanish Conjugation', date: '2025-05-15' },
-  ]);
+  const [chatHistory, setChatHistory] = useState([]);
   const messageEndRef = useRef(null);
   
   // Mock user data (in a real app, this would come from authentication)
