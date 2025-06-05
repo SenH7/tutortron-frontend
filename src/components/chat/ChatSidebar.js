@@ -1,9 +1,20 @@
-// src/components/chat/ChatSidebar.js
-import { useState } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import Button from '../ui/Button';
 
-const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat, onLogout }) => {
+const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
+    const [, setIsLoggedIn] = useState(false);
+  
+    // Check if user is logged in
+    useEffect(() => {
+      const user = localStorage.getItem('tutortronUser');
+      setIsLoggedIn(!!user);
+    }, []);
+
+    const handleLogout = () => {
+    localStorage.removeItem('tutortronUser');
+    setIsLoggedIn(false);
+    window.location.href = '/login';
+  };
   return (
     <>
       {/* Mobile sidebar overlay */}
@@ -88,8 +99,7 @@ const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat, onLogout }
             </div>
           </div>
           <Button 
-            variant="secondary" 
-            onClick={onLogout}
+            onClick={handleLogout}
             className="w-full justify-center"
           >
             Log out

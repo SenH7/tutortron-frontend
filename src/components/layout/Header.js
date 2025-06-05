@@ -1,26 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import Button from '../ui/Button';
 
 const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  // Check if user is logged in
-  useEffect(() => {
-    const user = localStorage.getItem('tutortronUser');
-    setIsLoggedIn(!!user);
-  }, []);
 
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('tutortronUser');
-    setIsLoggedIn(false);
-    window.location.href = '/';
   };
 
   return (
@@ -49,28 +35,15 @@ const Header = () => {
             Testimonials
           </Link>
 
-          {isLoggedIn ? (
-            <>
-              <Button href="/chat" variant="secondary">
-                Go to Chat
-              </Button>
-              <Button onClick={handleLogout}>
-                Log Out
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button href="/chat" variant="secondary">
-                Go to Chat
-              </Button>
-              <Button variant="secondary" href="/login">
-                Login
-              </Button>
-              <Button href="/signup">
-                Sign Up
-              </Button>
-            </>
-          )}
+          <Button href="/chat" variant="secondary">
+            Go to Chat
+          </Button>
+          <Button variant="secondary" href="/login">
+            Login
+          </Button>
+          <Button href="/signup">
+            Sign Up
+          </Button>
         </nav>
 
         {/* Mobile menu button */}
@@ -122,32 +95,15 @@ const Header = () => {
               Testimonials
             </Link>
             <div className="pt-4 flex flex-col gap-3">
-              {isLoggedIn ? (
-                <>
-                  <Button href="/chat" className="w-full" onClick={() => setMobileMenuOpen(false)}>
-                    Go to Chat
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      handleLogout();
-                      setMobileMenuOpen(false);
-                    }}
-                    className="w-full"
-                  >
-                    Log Out
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button variant="secondary" href="/login" className="w-full" onClick={() => setMobileMenuOpen(false)}>
-                    Login
-                  </Button>
-                  <Button href="/signup" className="w-full" onClick={() => setMobileMenuOpen(false)}>
-                    Sign Up
-                  </Button>
-                </>
-              )}
+              <Button href="/chat" variant="secondary">
+                Go to Chat
+              </Button>
+              <Button variant="secondary" href="/login">
+                Login
+              </Button>
+              <Button href="/signup">
+                Sign Up
+              </Button>
             </div>
           </div>
         </div>

@@ -20,9 +20,7 @@ const Footer = () => {
             </p>
           </div>
           
-          {/* Product links */}
           <div>
-            <h3 className="font-semibold mb-4">Product</h3>
             <ul className="space-y-3">
               <li>
                 <Link href="#features" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
@@ -42,15 +40,8 @@ const Footer = () => {
             </ul>
           </div>
           
-          {/* Company links */}
           <div>
-            <h3 className="font-semibold mb-4">Company</h3>
             <ul className="space-y-3">
-              <li>
-                <Link href="/about" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
-                  About
-                </Link>
-              </li>
               <li>
                 <Link href="/contact" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
                   Contact

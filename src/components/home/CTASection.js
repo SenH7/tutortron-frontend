@@ -18,14 +18,6 @@ const CTASection = () => {
           >
             Get started for free
           </Button>
-          <Button 
-            href="/contact" 
-            variant="secondary" 
-            size="lg" 
-            className="border-white text-white hover:bg-white/10"
-          >
-            Contact our team
-          </Button>
         </div>
         <p className="mt-6 text-sm text-blue-100">
           Free for every students.

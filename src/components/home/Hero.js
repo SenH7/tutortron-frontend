@@ -23,19 +23,6 @@ const Hero = () => {
                 See how it works
               </Button>
             </div>
-            
-            {/* Trust indicators */}
-            <div className="mt-12">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Trusted by educators and students from:
-              </p>
-              <div className="flex flex-wrap gap-6 items-center">
-                <div className="text-gray-400 dark:text-gray-500 font-semibold">Stanford University</div>
-                <div className="text-gray-400 dark:text-gray-500 font-semibold">MIT</div>
-                <div className="text-gray-400 dark:text-gray-500 font-semibold">Harvard</div>
-                <div className="text-gray-400 dark:text-gray-500 font-semibold">Oxford</div>
-              </div>
-            </div>
           </div>
           
           {/* Hero image */}
@@ -45,7 +32,7 @@ const Hero = () => {
               <div className="text-white text-center px-6">
                 <div className="text-2xl font-bold mb-4">Tutortron Interface</div>
                 <p>Interactive AI tutoring dashboard with personalized lessons and real-time feedback</p>
-                {/* Replace this with your actual screenshot or illustration */}
+                {/* Replace this with actual screenshot or illustration */}
                 {/* <Image 
                   src="/images/hero-screenshot.png" 
                   alt="Tutortron interface showing a personalized learning session" 
