@@ -44,18 +44,6 @@ def get_embedding(text,batch_size=8):
     )
     return response.data[0].embedding
 
-
-def get_embeddings_batch(texts, batch_size=8):
-    all_embeddings = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        response = openai_client.embeddings.create(
-            model="text-embedding-3-small",
-            input=batch
-        )
-        embeddings = [r.embedding for r in response.data]
-        all_embeddings.extend(embeddings)
-    return all_embeddings
 def upload_pdf(pdf_path):
     chunks = pdf_to_chunks(pdf_path)
     points = []
