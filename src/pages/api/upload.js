@@ -1,6 +1,7 @@
-// src/pages/api/upload.js - Handle file uploads to Python backend
+// src/pages/api/upload.js - Fixed file upload handling
 import formidable from 'formidable';
 import fs from 'fs';
+import FormData from 'form-data';
 
 export const config = {
   api: {
@@ -14,6 +15,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  console.log('Upload API called');
+
   try {
     // Parse the multipart form data
     const form = formidable({
@@ -26,42 +29,69 @@ export default async function handler(req, res) {
 
     const [fields, files] = await form.parse(req);
     
+    console.log('Parsed files:', Object.keys(files));
+    console.log('File details:', files.file?.[0]);
+    
     const file = files.file?.[0];
     
     if (!file) {
+      console.error('No file found after parsing');
       return res.status(400).json({ error: 'No PDF file provided' });
     }
 
-    // Prepare form data for the Python backend
-    const FormData = (await import('form-data')).default;
+    console.log('File found:', {
+      filename: file.originalFilename,
+      size: file.size,
+      mimetype: file.mimetype,
+      filepath: file.filepath
+    });
+
+    // Read the file into a buffer first
+    const fileBuffer = fs.readFileSync(file.filepath);
+    console.log('File buffer size:', fileBuffer.length);
+    
+    // Create form data for the Python backend
     const formData = new FormData();
     
-    // Read the file and append to form data
-    const fileStream = fs.createReadStream(file.filepath);
-    formData.append('file', fileStream, {
+    // Append the file buffer with proper metadata
+    formData.append('file', fileBuffer, {
       filename: file.originalFilename,
       contentType: file.mimetype,
     });
 
     // Forward to Python backend
-    const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:5000';
+    const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
     
-    console.log(`Uploading file to: ${backendUrl}/upload`);
+    console.log(`Forwarding to backend: ${backendUrl}/upload`);
     
     const response = await fetch(`${backendUrl}/upload`, {
       method: 'POST',
       body: formData,
-      headers: formData.getHeaders(),
+      headers: {
+        ...formData.getHeaders(),
+      },
     });
+
+    console.log('Backend response status:', response.status);
 
     // Clean up the temporary file
-    fs.unlink(file.filepath, (err) => {
-      if (err) console.error('Error cleaning up temp file:', err);
-    });
+    try {
+      fs.unlinkSync(file.filepath);
+      console.log('Cleaned up temp file');
+    } catch (cleanupError) {
+      console.warn('Error cleaning up temp file:', cleanupError);
+    }
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('Backend upload error:', errorData);
+      const errorText = await response.text();
+      console.error('Backend error response:', errorText);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
       
       return res.status(response.status).json({
         error: errorData.error || 'Failed to upload file',
@@ -70,6 +100,7 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
+    console.log('Backend success response:', data);
     
     res.status(200).json({
       success: true,

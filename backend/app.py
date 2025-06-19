@@ -3,7 +3,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
 import tempfile
-from rag import upload_pdf, query_ai_ta
+from rag import upload_pdf, query_ai_ta, init_qdrant
 import logging
 
 app = Flask(__name__)
@@ -31,29 +31,63 @@ def allowed_file(filename):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({"status": "healthy", "message": "RAG backend is running"})
+    try:
+        # Test Qdrant connection
+        qdrant_client = init_qdrant()
+        collections = qdrant_client.get_collections()
+        
+        # Check OpenAI API key
+        openai_key = os.getenv("OPENAI_API_KEY")
+        has_openai = bool(openai_key and openai_key != "your_openai_api_key_here")
+        
+        return jsonify({
+            "status": "healthy", 
+            "message": "RAG backend is running",
+            "qdrant_connected": True,
+            "openai_configured": has_openai,
+            "collections": len(collections.collections)
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            "status": "unhealthy",
+            "message": f"Service issues: {str(e)}"
+        }), 500
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Upload and process PDF files"""
     try:
+        logger.info(f"Upload request received")
+        logger.info(f"Request files: {list(request.files.keys())}")
+        logger.info(f"Content-Type: {request.content_type}")
+        
         if 'file' not in request.files:
+            logger.error("No file in request.files")
             return jsonify({"error": "No file provided"}), 400
         
         file = request.files['file']
         
         if file.filename == '':
+            logger.error("Empty filename")
             return jsonify({"error": "No file selected"}), 400
         
         if not allowed_file(file.filename):
+            logger.error(f"Invalid file type: {file.filename}")
             return jsonify({"error": "Only PDF files are allowed"}), 400
+        
+        # Check if we have OpenAI API key
+        if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
+            logger.error("OpenAI API key not configured")
+            return jsonify({"error": "OpenAI API key not configured"}), 500
         
         # Save file temporarily
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        logger.info(f"Processing file: {filename}")
+        logger.info(f"File saved: {filepath}")
+        logger.info(f"File size: {os.path.getsize(filepath)} bytes")
         
         # Process the PDF with RAG
         try:
@@ -65,7 +99,7 @@ def upload_file():
             
             return jsonify({
                 "success": True,
-                "message": f"Successfully processed {filename}",
+                "message": f"Successfully processed {filename}. You can now ask questions about this document.",
                 "filename": filename
             })
             
@@ -95,6 +129,11 @@ def chat():
         
         logger.info(f"Processing chat message from user {user_id}: {user_message[:100]}...")
         
+        # Check if we have OpenAI API key
+        if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
+            logger.error("OpenAI API key not configured")
+            return jsonify({"error": "OpenAI API key not configured"}), 500
+        
         # Query the RAG system
         try:
             ai_response = query_ai_ta(user_message, verbose=True)
@@ -122,13 +161,21 @@ def chat():
 def clear_documents():
     """Clear all documents from the vector database"""
     try:
-        # You'll need to add this function to your rag.py
-        # For now, we'll just return a success message
-        logger.info("Document clearing requested")
+        from rag import COLLECTION_NAME
+        qdrant_client = init_qdrant()
+        
+        # Delete and recreate collection
+        qdrant_client.delete_collection(COLLECTION_NAME)
+        qdrant_client.recreate_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config={"size": 1536, "distance": "Cosine"}
+        )
+        
+        logger.info("Documents cleared successfully")
         
         return jsonify({
             "success": True,
-            "message": "Documents cleared successfully"
+            "message": "All documents cleared successfully"
         })
         
     except Exception as e:
@@ -146,4 +193,20 @@ def internal_server_error(e):
 
 if __name__ == '__main__':
     logger.info("Starting RAG backend server...")
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    logger.info("Checking environment...")
+    
+    # Check environment variables
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not openai_key or openai_key == "your_openai_api_key_here":
+        logger.warning("⚠️  OpenAI API key not configured!")
+    else:
+        logger.info("✓ OpenAI API key configured")
+    
+    # Test Qdrant connection
+    try:
+        init_qdrant()
+        logger.info("✓ Qdrant connection successful")
+    except Exception as e:
+        logger.error(f"❌ Qdrant connection failed: {e}")
+    
+    app.run(debug=True, host='0.0.0.0', port=8000)

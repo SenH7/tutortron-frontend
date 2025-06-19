@@ -9,7 +9,6 @@ import numpy as np
 from sentence_transformers import CrossEncoder
 import datetime
 import os
-from sentence_transformers import CrossEncoder
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
