@@ -94,105 +94,105 @@ export default function Chat() {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = async (message) => {
-    if (!message.trim() || isBlocked) return;
+  // const handleSendMessage = async (message) => {
+  //   if (!message.trim() || isBlocked) return;
     
-    // Track user message activity
-    const activity = activityTracker.trackActivity(
-      user.id,
-      user.name,
-      'Chat Message',
-      'User sent a message to AI tutor',
-      message
-    );
+  //   // Track user message activity
+  //   const activity = activityTracker.trackActivity(
+  //     user.id,
+  //     user.name,
+  //     'Chat Message',
+  //     'User sent a message to AI tutor',
+  //     message
+  //   );
 
-    // If message is flagged, show warning and don't process
-    if (activity.flagged) {
-      const warningMessage = {
-        id: Date.now(),
-        role: 'assistant',
-        content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`
-      };
+  //   // If message is flagged, show warning and don't process
+  //   if (activity.flagged) {
+  //     const warningMessage = {
+  //       id: Date.now(),
+  //       role: 'assistant',
+  //       content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`
+  //     };
       
-      setMessages(prev => [...prev, warningMessage]);
+  //     setMessages(prev => [...prev, warningMessage]);
       
-      // Track the warning
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Content Warning',
-        `User received warning for flagged content: ${activity.flagReason}`
-      );
+  //     // Track the warning
+  //     activityTracker.trackActivity(
+  //       user.id,
+  //       user.name,
+  //       'Content Warning',
+  //       `User received warning for flagged content: ${activity.flagReason}`
+  //     );
       
-      return;
-    }
+  //     return;
+  //   }
     
-    // Add user message to chat
-    const userMessage = {
-      id: Date.now(),
-      role: 'user',
-      content: message
-    };
+  //   // Add user message to chat
+  //   const userMessage = {
+  //     id: Date.now(),
+  //     role: 'user',
+  //     content: message
+  //   };
     
-    setMessages(prev => [...prev, userMessage]);
-    setIsLoading(true);
+  //   setMessages(prev => [...prev, userMessage]);
+  //   setIsLoading(true);
 
-    try {
-      // This would be replaced with your actual API call
-      // const response = await fetch('/api/chat', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ 
-      //     message, 
-      //     userId: user.id,
-      //     sessionId: activity.sessionId 
-      //   }),
-      // });
-      // const data = await response.json();
+  //   try {
+  //     // This would be replaced with your actual API call
+  //     // const response = await fetch('/api/chat', {
+  //     //   method: 'POST',
+  //     //   headers: { 'Content-Type': 'application/json' },
+  //     //   body: JSON.stringify({ 
+  //     //     message, 
+  //     //     userId: user.id,
+  //     //     sessionId: activity.sessionId 
+  //     //   }),
+  //     // });
+  //     // const data = await response.json();
       
-      // Simulate API response delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+  //     // Simulate API response delay
+  //     await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Simulated AI response
-      const aiResponse = getSimulatedResponse(message);
-      const aiMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: aiResponse
-      };
+  //     // Simulated AI response
+  //     const aiResponse = getSimulatedResponse(message);
+  //     const aiMessage = {
+  //       id: Date.now() + 1,
+  //       role: 'assistant',
+  //       content: aiResponse
+  //     };
       
-      setMessages(prev => [...prev, aiMessage]);
+  //     setMessages(prev => [...prev, aiMessage]);
       
-      // Track AI response
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'AI Response',
-        'AI tutor responded to user message',
-        aiResponse
-      );
+  //     // Track AI response
+  //     activityTracker.trackActivity(
+  //       user.id,
+  //       user.name,
+  //       'AI Response',
+  //       'AI tutor responded to user message',
+  //       aiResponse
+  //     );
       
-    } catch (error) {
-      console.error('Error sending message:', error);
+  //   } catch (error) {
+  //     console.error('Error sending message:', error);
       
-      // Track error
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Error',
-        'Failed to get AI response'
-      );
+  //     // Track error
+  //     activityTracker.trackActivity(
+  //       user.id,
+  //       user.name,
+  //       'Error',
+  //       'Failed to get AI response'
+  //     );
       
-      // Add error message
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: "I'm sorry, there was an error processing your request. Please try again."
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  //     // Add error message
+  //     setMessages(prev => [...prev, {
+  //       id: Date.now() + 1,
+  //       role: 'assistant',
+  //       content: "I'm sorry, there was an error processing your request. Please try again."
+  //     }]);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
 
   // Helper function to generate simulated responses
   const getSimulatedResponse = (message) => {
@@ -249,6 +249,111 @@ export default function Chat() {
     
     localStorage.removeItem('tutortronUser');
     router.push('/');
+  };
+
+  const handleSendMessage = async (message) => {
+    if (!message.trim() || isBlocked) return;
+    
+    // Track user message activity
+    const activity = activityTracker.trackActivity(
+      user.id,
+      user.name,
+      'Chat Message',
+      'User sent a message to AI tutor',
+      message
+    );
+
+    // If message is flagged, show warning and don't process
+    if (activity.flagged) {
+      const warningMessage = {
+        id: Date.now(),
+        role: 'assistant',
+        content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`
+      };
+      
+      setMessages(prev => [...prev, warningMessage]);
+      
+      // Track the warning
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'Content Warning',
+        `User received warning for flagged content: ${activity.flagReason}`
+      );
+      
+      return;
+    }
+    
+    // Add user message to chat
+    const userMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: message
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
+      // Call the real API
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message, 
+          userId: user.id,
+          sessionId: activity.sessionId 
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get response');
+      }
+
+      const data = await response.json();
+      
+      const aiMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: data.response
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+      
+      // Track AI response
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'AI Response',
+        'AI tutor responded to user message',
+        data.response
+      );
+      
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      // Track error
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'Error',
+        'Failed to get AI response'
+      );
+      
+      // Add error message
+      const errorMessage = error.message.includes('unavailable') 
+        ? "The AI tutor service is currently unavailable. Please upload some course materials first or try again later."
+        : "I'm sorry, there was an error processing your request. Please try again.";
+        
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: errorMessage
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Show blocked message if user is blocked

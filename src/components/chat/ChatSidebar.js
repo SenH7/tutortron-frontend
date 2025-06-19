@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Button from '../ui/Button';
+import FileUpload from './FileUpload';
 
 const ChatSidebar = ({ user, chatHistory, isOpen, onClose, onNewChat }) => {
   const [, setIsLoggedIn] = useState(false);

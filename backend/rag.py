@@ -11,17 +11,42 @@ import datetime
 import os
 from sentence_transformers import CrossEncoder
 
-# Initialize OpenAI and Qdrant
+# Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-qdrant = QdrantClient(host="localhost", port=6333)
 
 COLLECTION_NAME = "ai_ta_docs"
 
-# Create collection
-qdrant.recreate_collection(
-    collection_name=COLLECTION_NAME,
-    vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
-)
+# Initialize Qdrant client but don't create collection immediately
+qdrant = None
+
+def init_qdrant():
+    """Initialize Qdrant connection and create collection if needed"""
+    global qdrant
+    
+    if qdrant is None:
+        try:
+            qdrant = QdrantClient(host="localhost", port=6333)
+            print("✓ Connected to Qdrant")
+            
+            # Check if collection exists, create if it doesn't
+            collections = qdrant.get_collections()
+            collection_names = [col.name for col in collections.collections]
+            
+            if COLLECTION_NAME not in collection_names:
+                qdrant.recreate_collection(
+                    collection_name=COLLECTION_NAME,
+                    vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
+                )
+                print(f"✓ Created collection: {COLLECTION_NAME}")
+            else:
+                print(f"✓ Collection {COLLECTION_NAME} already exists")
+                
+        except Exception as e:
+            print(f"❌ Failed to connect to Qdrant: {e}")
+            print("Make sure Qdrant is running: docker run -p 6333:6333 qdrant/qdrant")
+            raise e
+    
+    return qdrant
 
 def chunk_text(text, max_chars=500):
     return [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
@@ -36,14 +61,12 @@ def pdf_to_chunks(pdf_path):
 
     return chunk_text(full_text, max_chars=500)
 
-
-def get_embedding(text,batch_size=8):
+def get_embedding(text, batch_size=8):
     response = openai_client.embeddings.create(
         model="text-embedding-3-small",
         input=[text]
     )
     return response.data[0].embedding
-
 
 def get_embeddings_batch(texts, batch_size=8):
     all_embeddings = []
@@ -56,9 +79,17 @@ def get_embeddings_batch(texts, batch_size=8):
         embeddings = [r.embedding for r in response.data]
         all_embeddings.extend(embeddings)
     return all_embeddings
+
 def upload_pdf(pdf_path):
+    """Upload and process PDF file"""
+    # Initialize Qdrant connection
+    qdrant_client = init_qdrant()
+    
     chunks = pdf_to_chunks(pdf_path)
     points = []
+    
+    print(f"Processing {len(chunks)} chunks from {pdf_path}")
+    
     for i, chunk in enumerate(chunks):
         embedding = get_embedding(chunk)
         hash_id = hashlib.md5(chunk.encode()).hexdigest()
@@ -70,19 +101,14 @@ def upload_pdf(pdf_path):
                 "date_uploaded": str(datetime.datetime.utcnow())
             }
         ))
-    qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
-    print(f"Uploaded {len(points)} chunks from {pdf_path}")
+    
+    qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+    print(f"✓ Uploaded {len(points)} chunks from {pdf_path}")
 
-
-#3. Query Module with Cosine + CrossEncoder
-
-
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize CrossEncoder
 cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 PROMPT_TEMPLATE = """
-
 You are an AI Teaching Assistant designed to answer questions strictly based on uploaded lecture materials, textbooks, or course documents. Do not generate answers beyond retrieved evidence.
 
 Use the following format for every interaction:
@@ -107,21 +133,29 @@ Policy:
 <<FINAL ANSWER>> {assistant_answer}"""
 
 def query_ai_ta(question, threshold=0.6, top_k=8, verbose=False):
+    """Query the AI Teaching Assistant"""
+    # Initialize Qdrant connection
+    qdrant_client = init_qdrant()
+    
     # Step 1: Embed the question
     query_embedding = get_embedding(question)
 
     # Step 2: Retrieve top_k docs from Qdrant using cosine similarity
-    results = qdrant.search(
-        collection_name=COLLECTION_NAME,
-        query_vector=query_embedding,
-        limit=top_k,
-        with_payload=True
-    )
+    try:
+        results = qdrant_client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_embedding,
+            limit=top_k,
+            with_payload=True
+        )
+    except Exception as e:
+        print(f"Error searching Qdrant: {e}")
+        return "I'm sorry, there was an error accessing the document database. Please try again."
 
     if not results:
         if verbose:
             print("🔍 No results retrieved from Qdrant.")
-        return "No context found."
+        return "The information related to your question was not found in the course materials."
 
     # Step 3: Check cosine similarity threshold
     if results[0].score < threshold:
@@ -149,10 +183,11 @@ def query_ai_ta(question, threshold=0.6, top_k=8, verbose=False):
 
     # Step 5: Format the final prompt
     prompt = PROMPT_TEMPLATE.format(
-        date=str(datetime.date.today()),
-        question=question,
-        context=best_context,
-        thought="The documents provided a good match."
+        user_input=question,
+        retrieved_context=best_context,
+        context_url="uploaded_document",
+        similarity_score=scores_cosine[best_idx],
+        assistant_answer="[TO BE GENERATED]"
     )
 
     if verbose:
@@ -161,13 +196,16 @@ def query_ai_ta(question, threshold=0.6, top_k=8, verbose=False):
         print("-"*60)
 
     # Step 6: Generate final response from OpenAI
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are an AI Teaching Assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.3
-    )
-
-    return response.choices[0].message.content
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an AI Teaching Assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error generating OpenAI response: {e}")
+        return "I'm sorry, there was an error generating a response. Please try again."
