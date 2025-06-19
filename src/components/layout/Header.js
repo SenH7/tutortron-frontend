@@ -1,3 +1,4 @@
+// src/components/layout/Header.js - Updated with admin link
 import { useState } from 'react';
 import Link from 'next/link';
 import Button from '../ui/Button';
@@ -15,7 +16,6 @@ const Header = () => {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
           <div className="h-10 w-10 relative">
-            {/* Replace with your logo */}
             <div className="h-10 w-10 bg-foreground rounded-lg flex items-center justify-center text-background text-lg font-bold">
               T
             </div>
@@ -44,6 +44,14 @@ const Header = () => {
           <Button href="/signup">
             Sign Up
           </Button>
+          
+          {/* Admin link - small and discrete */}
+          <Link 
+            href="/admin/login" 
+            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          >
+            Admin
+          </Link>
         </nav>
 
         {/* Mobile menu button */}
@@ -104,6 +112,13 @@ const Header = () => {
               <Button href="/signup">
                 Sign Up
               </Button>
+              <Link 
+                href="/admin/login" 
+                className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 text-center py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Admin Access
+              </Link>
             </div>
           </div>
         </div>

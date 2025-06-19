@@ -1,6 +1,7 @@
-// src/pages/chat.js
+// src/pages/chat.js - Updated with activity tracking
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { Geist, Geist_Mono } from "next/font/google";
 
 // Import layout components
@@ -8,6 +9,9 @@ import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatHeader from '@/components/chat/ChatHeader';
 import ChatInput from '@/components/chat/ChatInput';
 import ChatMessage from '@/components/chat/ChatMessage';
+
+// Import activity tracker
+import activityTracker from '@/utils/activityTracker';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,24 +28,66 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
+  const [user, setUser] = useState(null);
+  const [isBlocked, setIsBlocked] = useState(false);
   const messageEndRef = useRef(null);
-  
-  // Mock user data (in a real app, this would come from authentication)
-  const user = {
-    name: 'John Doe',
-    email: 'student@example.com',
+  const router = useRouter();
+
+  // Check authentication and user status
+  useEffect(() => {
+    const userData = localStorage.getItem('tutortronUser');
+    if (!userData) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+      
+      // Check if user is blocked
+      checkUserStatus(parsedUser.id);
+      
+      // Track login activity
+      activityTracker.trackActivity(
+        parsedUser.id,
+        parsedUser.name,
+        'Login',
+        'User logged into chat interface'
+      );
+    } catch (error) {
+      console.error('Invalid user data:', error);
+      router.push('/login');
+    }
+  }, [router]);
+
+  // Check user status (blocked/active)
+  const checkUserStatus = async (userId) => {
+    try {
+      // Mock API call - in real app, check user status from backend
+      // const response = await fetch(`/api/users/${userId}/status`);
+      // const data = await response.json();
+      
+      // For demo, simulate checking localStorage or a mock blocked users list
+      const blockedUsers = ['3']; // Mock blocked user IDs
+      if (blockedUsers.includes(userId)) {
+        setIsBlocked(true);
+      }
+    } catch (error) {
+      console.error('Error checking user status:', error);
+    }
   };
 
   // Initialize with welcome message
   useEffect(() => {
-    if (messages.length === 0) {
+    if (messages.length === 0 && user && !isBlocked) {
       setMessages([{
         id: 'welcome',
         role: 'assistant',
-        content: "Hello! I'm your Tutortron AI tutor. How can I help you with your studies today?"
+        content: `Hello ${user.name}! I'm your Tutortron AI tutor. How can I help you with your studies today?`
       }]);
     }
-  }, [messages.length]);
+  }, [messages.length, user, isBlocked]);
 
   // Scroll to bottom of chat when messages update
   useEffect(() => {
@@ -49,7 +95,37 @@ export default function Chat() {
   }, [messages]);
 
   const handleSendMessage = async (message) => {
-    if (!message.trim()) return;
+    if (!message.trim() || isBlocked) return;
+    
+    // Track user message activity
+    const activity = activityTracker.trackActivity(
+      user.id,
+      user.name,
+      'Chat Message',
+      'User sent a message to AI tutor',
+      message
+    );
+
+    // If message is flagged, show warning and don't process
+    if (activity.flagged) {
+      const warningMessage = {
+        id: Date.now(),
+        role: 'assistant',
+        content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`
+      };
+      
+      setMessages(prev => [...prev, warningMessage]);
+      
+      // Track the warning
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'Content Warning',
+        `User received warning for flagged content: ${activity.flagReason}`
+      );
+      
+      return;
+    }
     
     // Add user message to chat
     const userMessage = {
@@ -66,7 +142,11 @@ export default function Chat() {
       // const response = await fetch('/api/chat', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ message }),
+      //   body: JSON.stringify({ 
+      //     message, 
+      //     userId: user.id,
+      //     sessionId: activity.sessionId 
+      //   }),
       // });
       // const data = await response.json();
       
@@ -74,15 +154,35 @@ export default function Chat() {
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       // Simulated AI response
+      const aiResponse = getSimulatedResponse(message);
       const aiMessage = {
         id: Date.now() + 1,
         role: 'assistant',
-        content: getSimulatedResponse(message)
+        content: aiResponse
       };
       
       setMessages(prev => [...prev, aiMessage]);
+      
+      // Track AI response
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'AI Response',
+        'AI tutor responded to user message',
+        aiResponse
+      );
+      
     } catch (error) {
       console.error('Error sending message:', error);
+      
+      // Track error
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'Error',
+        'Failed to get AI response'
+      );
+      
       // Add error message
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
@@ -116,8 +216,18 @@ export default function Chat() {
     setMessages([{
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I'm your Tutortron AI tutor. How can I help you with your studies today?"
+      content: `Hello ${user?.name}! I'm your Tutortron AI tutor. How can I help you with your studies today?`
     }]);
+    
+    // Track new chat session
+    if (user) {
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'New Chat Session',
+        'User started a new chat session'
+      );
+    }
   };
 
   // Handle sidebar toggle
@@ -125,10 +235,56 @@ export default function Chat() {
     setSidebarOpen(!sidebarOpen);
   };
 
-  // Handle logout (just redirects to homepage)
+  // Handle logout
   const handleLogout = () => {
-    window.location.href = '/';
+    if (user) {
+      // Track logout activity
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'Logout',
+        'User logged out of chat interface'
+      );
+    }
+    
+    localStorage.removeItem('tutortronUser');
+    router.push('/');
   };
+
+  // Show blocked message if user is blocked
+  if (isBlocked) {
+    return (
+      <div className={`${geistSans.variable} ${geistMono.variable} font-[family-name:var(--font-geist-sans)] min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center`}>
+        <Head>
+          <title>Account Blocked - Tutortron</title>
+          <meta name="description" content="Account access restricted" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <link rel="icon" href="/favicon.ico" />
+        </Head>
+
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="h-16 w-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-red-600 dark:text-red-400">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            Account Temporarily Restricted
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Your account has been temporarily restricted due to violations of our community guidelines. 
+            Please contact support if you believe this is an error.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg"
+          >
+            Return to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`${geistSans.variable} ${geistMono.variable} font-[family-name:var(--font-geist-sans)] flex h-screen overflow-hidden bg-gray-50 dark:bg-black/10`}>
@@ -189,7 +345,8 @@ export default function Chat() {
           <div className="max-w-3xl mx-auto">
             <ChatInput 
               onSendMessage={handleSendMessage} 
-              isLoading={isLoading} 
+              isLoading={isLoading}
+              disabled={isBlocked}
             />
           </div>
         </div>
