@@ -46,31 +46,31 @@ export default async function handler(req, res) {
       filepath: file.filepath
     });
 
-    // Read the file into a buffer first
-    // const fileBuffer = fs.readFileSync(file.filepath);
-    // console.log('File buffer size:', fileBuffer.length);
-
-    // // Create form data for the Python backend
-    // const formData = new FormData();
-
-    // // Append the file buffer with proper metadata
-    // formData.append('file', fileBuffer, {
-    //   filename: file.originalFilename,
-    //   contentType: file.mimetype,
-    // });
-
-    // Create a readable stream from the file
-    const fileStream = fs.createReadStream(file.filepath);
-    console.log('Created file stream for:', file.originalFilename);
+     // Read the file into a buffer
+    const fileBuffer = fs.readFileSync(file.filepath);
+    console.log('Read file buffer, size:', fileBuffer.length);
     
     // Create form data for the Python backend
     const formData = new FormData();
     
-    // Append the file stream with proper metadata
-    formData.append('file', fileStream, {
+    // Append the file buffer with proper metadata
+    formData.append('file', fileBuffer, {
       filename: file.originalFilename,
       contentType: file.mimetype || 'application/pdf',
     });
+
+    // Create a readable stream from the file
+    // const fileStream = fs.createReadStream(file.filepath);
+    // console.log('Created file stream for:', file.originalFilename);
+    
+    // // Create form data for the Python backend
+    // const formData = new FormData();
+    
+    // // Append the file stream with proper metadata
+    // formData.append('file', fileStream, {
+    //   filename: file.originalFilename,
+    //   contentType: file.mimetype || 'application/pdf',
+    // });
 
     // Forward to Python backend
     const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:5001';
