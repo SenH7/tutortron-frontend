@@ -28,12 +28,12 @@ export default async function handler(req, res) {
     });
 
     const [fields, files] = await form.parse(req);
-    
+
     console.log('Parsed files:', Object.keys(files));
     console.log('File details:', files.file?.[0]);
-    
+
     const file = files.file?.[0];
-    
+
     if (!file) {
       console.error('No file found after parsing');
       return res.status(400).json({ error: 'No PDF file provided' });
@@ -47,23 +47,36 @@ export default async function handler(req, res) {
     });
 
     // Read the file into a buffer first
-    const fileBuffer = fs.readFileSync(file.filepath);
-    console.log('File buffer size:', fileBuffer.length);
+    // const fileBuffer = fs.readFileSync(file.filepath);
+    // console.log('File buffer size:', fileBuffer.length);
+
+    // // Create form data for the Python backend
+    // const formData = new FormData();
+
+    // // Append the file buffer with proper metadata
+    // formData.append('file', fileBuffer, {
+    //   filename: file.originalFilename,
+    //   contentType: file.mimetype,
+    // });
+
+    // Create a readable stream from the file
+    const fileStream = fs.createReadStream(file.filepath);
+    console.log('Created file stream for:', file.originalFilename);
     
     // Create form data for the Python backend
     const formData = new FormData();
     
-    // Append the file buffer with proper metadata
-    formData.append('file', fileBuffer, {
+    // Append the file stream with proper metadata
+    formData.append('file', fileStream, {
       filename: file.originalFilename,
-      contentType: file.mimetype,
+      contentType: file.mimetype || 'application/pdf',
     });
 
     // Forward to Python backend
-    const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
-    
+    const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:5001';
+
     console.log(`Forwarding to backend: ${backendUrl}/upload`);
-    
+
     const response = await fetch(`${backendUrl}/upload`, {
       method: 'POST',
       body: formData,
@@ -85,14 +98,14 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Backend error response:', errorText);
-      
+
       let errorData;
       try {
         errorData = JSON.parse(errorText);
       } catch {
         errorData = { error: errorText };
       }
-      
+
       return res.status(response.status).json({
         error: errorData.error || 'Failed to upload file',
         details: errorData
@@ -101,7 +114,7 @@ export default async function handler(req, res) {
 
     const data = await response.json();
     console.log('Backend success response:', data);
-    
+
     res.status(200).json({
       success: true,
       message: data.message,
@@ -110,14 +123,14 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Upload API error:', error);
-    
+
     if (error.code === 'ECONNREFUSED' || error.message.includes('fetch')) {
       return res.status(503).json({
         error: 'Upload service is currently unavailable. Please try again later.',
         details: 'Backend connection failed'
       });
     }
-    
+
     res.status(500).json({
       error: 'File upload failed',
       details: error.message
