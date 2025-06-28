@@ -127,16 +127,27 @@ def chat():
         user_id = data.get('userId', 'anonymous')
         session_id = data.get('sessionId', 'default')
         
+        # Get parameters from request (use same as test_rag.py)
+        threshold = data.get('threshold', 0.25)  # Lower threshold like test
+        top_k = data.get('top_k', 8)
+        verbose = data.get('verbose', True)
+        
         logger.info(f"Processing chat message from user {user_id}: {user_message[:100]}...")
+        logger.info(f"Using threshold: {threshold}, top_k: {top_k}, verbose: {verbose}")
         
         # Check if we have OpenAI API key
         if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
             logger.error("OpenAI API key not configured")
             return jsonify({"error": "OpenAI API key not configured"}), 500
         
-        # Query the RAG system
+        # Query the RAG system with the same parameters as test_rag.py
         try:
-            ai_response = query_ai_ta(user_message, verbose=True)
+            ai_response = query_ai_ta(
+                user_message, 
+                threshold=threshold, 
+                top_k=top_k,
+                verbose=verbose
+            )
             
             logger.info(f"Generated AI response for user {user_id}")
             

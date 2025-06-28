@@ -14,6 +14,97 @@ const ChatMessage = ({ message }) => {
     }
   };
 
+  // Function to parse and render formatted text
+  const renderFormattedContent = (text) => {
+    const lines = text.split('\n');
+    const elements = [];
+    let currentIndex = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      if (!line) {
+        // Empty line - add spacing
+        elements.push(<br key={`br-${currentIndex++}`} />);
+        continue;
+      }
+
+      // Check for numbered sections (1. **Title:** or 1. **Title**)
+      const numberedMatch = line.match(/^(\d+)\.\s*\*\*([^*]+)\*\*(.*)$/);
+      if (numberedMatch) {
+        const [, number, title, rest] = numberedMatch;
+        elements.push(
+          <div key={currentIndex++} className="mt-4 mb-2">
+            <span className="font-bold text-lg">
+              {number}. <strong>{title}</strong>
+            </span>
+            {rest && <span>{rest}</span>}
+          </div>
+        );
+        continue;
+      }
+
+      // Check for bullet points with **bold** text
+      const bulletBoldMatch = line.match(/^-\s*\*\*([^*]+)\*\*(.*)$/);
+      if (bulletBoldMatch) {
+        const [, boldText, rest] = bulletBoldMatch;
+        elements.push(
+          <div key={currentIndex++} className="ml-4 mb-1">
+            • <strong>{boldText}</strong>{rest}
+          </div>
+        );
+        continue;
+      }
+
+      // Check for regular bullet points
+      const bulletMatch = line.match(/^-\s+(.+)$/);
+      if (bulletMatch) {
+        elements.push(
+          <div key={currentIndex++} className="ml-4 mb-1">
+            • {bulletMatch[1]}
+          </div>
+        );
+        continue;
+      }
+
+      // Check for nested bullet points (indented)
+      const nestedBulletMatch = line.match(/^\s{2,}-\s+(.+)$/);
+      if (nestedBulletMatch) {
+        elements.push(
+          <div key={currentIndex++} className="ml-8 mb-1">
+            ◦ {nestedBulletMatch[1]}
+          </div>
+        );
+        continue;
+      }
+
+      // Check for **bold** text in regular lines
+      const boldMatches = line.split(/(\*\*[^*]+\*\*)/);
+      if (boldMatches.length > 1) {
+        elements.push(
+          <p key={currentIndex++} className="mb-2">
+            {boldMatches.map((part, idx) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={idx}>{part.slice(2, -2)}</strong>;
+              }
+              return part;
+            })}
+          </p>
+        );
+        continue;
+      }
+
+      // Regular paragraph
+      elements.push(
+        <p key={currentIndex++} className="mb-2">
+          {line}
+        </p>
+      );
+    }
+
+    return elements;
+  };
+
   return (
     <div className={`flex py-6 ${role === 'user' ? 'justify-end' : ''}`}>
       {role === 'assistant' && (
@@ -40,8 +131,9 @@ const ChatMessage = ({ message }) => {
             )}
           </button>
         )}
-        <div className={role === 'assistant' ? 'prose dark:prose-invert max-w-none' : ''}>
-          {content}
+        
+        <div className="leading-relaxed">
+          {role === 'assistant' ? renderFormattedContent(content) : content}
         </div>
       </div>
 

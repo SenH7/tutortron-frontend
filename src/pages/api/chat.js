@@ -1,4 +1,4 @@
-// src/pages/api/chat.js - Updated to connect with Python backend
+// src/pages/api/chat.js - Updated with better parameters
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -12,8 +12,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Forward the request to the Python Flask backend
-    const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:5000';
+    // Forward the request to the Python Flask backend with better parameters
+    const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:5001';
     
     console.log(`Forwarding chat request to: ${backendUrl}/chat`);
     
@@ -25,7 +25,11 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         message: message.trim(),
         userId: userId || 'anonymous',
-        sessionId: sessionId || `session_${Date.now()}`
+        sessionId: sessionId || `session_${Date.now()}`,
+        // Add better parameters that match your successful test
+        threshold: 0.25,  // Lower threshold like in test_rag.py
+        top_k: 8,        // Same as test
+        verbose: true    // Enable verbose logging
       }),
     });
 
