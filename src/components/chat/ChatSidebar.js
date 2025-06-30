@@ -80,17 +80,9 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
     setIsLoading(true);
     
     try {
-      // Create new chat using utility function
-      const newChat = createNewChat();
-      
-      // Save to localStorage
-      const success = saveChatToHistory(user.id, newChat);
-      if (success) {
-        refreshChatHistory();
-        onNewChat(newChat.id);
-      } else {
-        console.error('Failed to save new chat');
-      }
+      // Don't create or save a new chat here - just tell parent to initialize a new temporary chat
+      onNewChat(); // This will create a temporary chat that won't be saved until there's content
+      refreshChatHistory(); // Refresh to update any existing chats
     } catch (error) {
       console.error('Error creating new chat:', error);
     } finally {

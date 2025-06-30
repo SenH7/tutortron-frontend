@@ -1,4 +1,4 @@
-// src/pages/chat.js - Updated with real chat history saving using utility functions
+// src/pages/chat.js - Updated with proper chat history management
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -40,6 +40,7 @@ export default function Chat() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
   const messageEndRef = useRef(null);
   const router = useRouter();
 
@@ -74,15 +75,29 @@ export default function Chat() {
     }
   }, [router]);
 
+  // Check if chat has real content (not just welcome message)
+  const hasRealContent = (messages) => {
+    if (!messages || messages.length === 0) return false;
+    
+    // Filter out welcome messages and system messages
+    const realMessages = messages.filter(msg => 
+      msg.id !== 'welcome' && 
+      !msg.content.includes("Hello! I'm your Tutortron AI tutor") &&
+      (msg.role === 'user' || (msg.role === 'assistant' && !msg.content.includes("✅ Successfully uploaded")))
+    );
+    
+    return realMessages.length > 0;
+  };
+
   // Scroll to bottom of chat when messages update
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Save current chat whenever messages change
+  // Save current chat whenever messages change (only if there's meaningful content)
   useEffect(() => {
-    if (currentChatId && user && messages.length > 0) {
-      saveChatToStorage();
+    if (currentChatId && user && hasRealContent(messages)) {
+      saveChatToStorage(); // This will auto-refresh sidebar when temp chat becomes real
     }
   }, [messages, currentChatId, user]);
 
@@ -100,9 +115,10 @@ export default function Chat() {
   };
 
   const initializeNewChat = () => {
-    const newChat = createNewChat();
-    setCurrentChatId(newChat.id);
-    setChatTitle(newChat.title);
+    // Create a temporary chat that won't be saved until there's content
+    const tempChatId = `temp_${Date.now()}`;
+    setCurrentChatId(tempChatId);
+    setChatTitle('New Chat');
     
     // Set welcome message
     const welcomeMessage = {
@@ -115,18 +131,39 @@ export default function Chat() {
     setMessages([welcomeMessage]);
   };
 
+  // Function to refresh sidebar history
+  const refreshSidebarHistory = () => {
+    setSidebarRefreshTrigger(prev => prev + 1);
+  };
+
   const saveChatToStorage = () => {
-    if (!user || !currentChatId || messages.length === 0) return;
+    if (!user || !currentChatId || !hasRealContent(messages)) return;
+
+    // If this is a temporary chat ID, create a real chat
+    let chatId = currentChatId;
+    let wasConverted = false;
+    if (currentChatId.startsWith('temp_')) {
+      const newChat = createNewChat();
+      chatId = newChat.id;
+      setCurrentChatId(chatId);
+      wasConverted = true;
+    }
 
     const chatData = {
-      id: currentChatId,
+      id: chatId,
       title: chatTitle,
       messages: messages,
       createdAt: messages[0]?.timestamp || new Date().toISOString(),
       lastUpdated: new Date().toISOString()
     };
 
-    saveChatToHistory(user.id, chatData);
+    const success = saveChatToHistory(user.id, chatData);
+    
+    // If chat was successfully saved and it was a conversion from temp to real chat,
+    // trigger sidebar refresh so the new chat appears immediately
+    if (success && wasConverted) {
+      refreshSidebarHistory();
+    }
   };
 
   // Handle file upload success
@@ -231,6 +268,13 @@ export default function Chat() {
     if (newMessages.filter(m => m.role === 'user').length === 1) {
       const newTitle = generateChatTitle(message);
       setChatTitle(newTitle);
+      
+      // Convert temp chat to real chat if needed
+      if (currentChatId.startsWith('temp_')) {
+        const newChat = createNewChat(newTitle);
+        setCurrentChatId(newChat.id);
+        // The useEffect will trigger saveChatToStorage and refresh sidebar
+      }
     }
     
     setIsLoading(true);
@@ -272,6 +316,8 @@ export default function Chat() {
         data.response
       );
       
+      // Note: The useEffect will automatically save and refresh sidebar when AI responds
+      
     } catch (error) {
       console.error('Error sending message:', error);
       
@@ -301,25 +347,13 @@ export default function Chat() {
 
   // Handle starting a new chat
   const handleNewChat = (newChatId = null) => {
-    // Save current chat before switching
-    if (currentChatId && messages.length > 0) {
+    // Save current chat before switching (only if it has real content)
+    if (currentChatId && hasRealContent(messages)) {
       saveChatToStorage();
     }
 
-    // Initialize new chat
-    const chatId = newChatId || createNewChat().id;
-    setCurrentChatId(chatId);
-    setChatTitle('New Chat');
-    setUploadedFiles([]);
-    
-    const welcomeMessage = {
-      id: 'welcome',
-      role: 'assistant',
-      content: `Hello! I'm your Tutortron AI tutor. You can upload course materials (PDF files) or start asking questions directly. How can I help you with your studies today?`,
-      timestamp: new Date().toISOString()
-    };
-    
-    setMessages([welcomeMessage]);
+    // Initialize new temporary chat
+    initializeNewChat();
     
     // Track new chat session
     if (user) {
@@ -334,8 +368,8 @@ export default function Chat() {
 
   // Handle loading a chat from history
   const handleLoadChat = (chat) => {
-    // Save current chat before switching
-    if (currentChatId && messages.length > 0) {
+    // Save current chat before switching (only if it has real content)
+    if (currentChatId && hasRealContent(messages)) {
       saveChatToStorage();
     }
 
@@ -364,8 +398,8 @@ export default function Chat() {
   // Handle logout
   const handleLogout = () => {
     if (user) {
-      // Save current chat before logout
-      if (currentChatId && messages.length > 0) {
+      // Save current chat before logout (only if it has real content)
+      if (currentChatId && hasRealContent(messages)) {
         saveChatToStorage();
       }
       
@@ -434,6 +468,7 @@ export default function Chat() {
         onNewChat={handleNewChat}
         onLoadChat={handleLoadChat}
         currentChatId={currentChatId}
+        refreshTrigger={sidebarRefreshTrigger} // Pass refresh trigger
       />
 
       {/* Main chat container */}
