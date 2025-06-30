@@ -1,4 +1,4 @@
-// src/components/chat/ChatSidebar.js - Updated with custom delete modal
+// src/components/chat/ChatSidebar.js - Fixed version with proper chat handling
 import { useState, useEffect } from 'react';
 import Button from '../ui/Button';
 import { 
@@ -42,7 +42,7 @@ const DeleteModal = ({ isOpen, chatTitle, onConfirm, onCancel }) => {
   );
 };
 
-const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChatId }) => {
+const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChatId, refreshTrigger }) => {
   const [chatHistory, setChatHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -56,6 +56,13 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
       refreshChatHistory();
     }
   }, [user]);
+
+  // Refresh chat history when refreshTrigger changes (when new chats are created)
+  useEffect(() => {
+    if (user && refreshTrigger > 0) {
+      refreshChatHistory();
+    }
+  }, [refreshTrigger, user]);
 
   // Close menu when clicking outside
   useEffect(() => {
