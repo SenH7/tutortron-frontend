@@ -1,4 +1,4 @@
-// src/pages/chat.js - Updated with file upload functionality
+// src/pages/chat.js - Updated with real chat history saving using utility functions
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -11,8 +11,14 @@ import ChatInput from '@/components/chat/ChatInput';
 import ChatMessage from '@/components/chat/ChatMessage';
 import FileUpload from '@/components/chat/FileUpload';
 
-// Import activity tracker
+// Import activity tracker and chat storage utilities
 import activityTracker from '@/utils/activityTracker';
+import { 
+  saveChatToHistory, 
+  createNewChat, 
+  generateChatTitle,
+  getChatById 
+} from '@/utils/chatStorage';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +34,8 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(null);
+  const [chatTitle, setChatTitle] = useState('New Chat');
   const [user, setUser] = useState(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [showFileUpload, setShowFileUpload] = useState(false);
@@ -58,11 +65,26 @@ export default function Chat() {
         'Login',
         'User logged into chat interface'
       );
+
+      // Initialize with a new chat
+      initializeNewChat();
     } catch (error) {
       console.error('Invalid user data:', error);
       router.push('/login');
     }
   }, [router]);
+
+  // Scroll to bottom of chat when messages update
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Save current chat whenever messages change
+  useEffect(() => {
+    if (currentChatId && user && messages.length > 0) {
+      saveChatToStorage();
+    }
+  }, [messages, currentChatId, user]);
 
   // Check user status (blocked/active)
   const checkUserStatus = async (userId) => {
@@ -77,29 +99,44 @@ export default function Chat() {
     }
   };
 
-  // Initialize with welcome message
-  useEffect(() => {
-    if (messages.length === 0 && user && !isBlocked) {
-      setMessages([{
-        id: 'welcome',
-        role: 'assistant',
-        content: `Hello ${user.name}! I'm your Tutortron AI tutor. You can upload course materials (PDF files) or start asking questions directly. How can I help you with your studies today?`
-      }]);
-    }
-  }, [messages.length, user, isBlocked]);
+  const initializeNewChat = () => {
+    const newChat = createNewChat();
+    setCurrentChatId(newChat.id);
+    setChatTitle(newChat.title);
+    
+    // Set welcome message
+    const welcomeMessage = {
+      id: 'welcome',
+      role: 'assistant',
+      content: `Hello! I'm your Tutortron AI tutor. You can upload course materials (PDF files) or start asking questions directly. How can I help you with your studies today?`,
+      timestamp: new Date().toISOString()
+    };
+    
+    setMessages([welcomeMessage]);
+  };
 
-  // Scroll to bottom of chat when messages update
-  useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const saveChatToStorage = () => {
+    if (!user || !currentChatId || messages.length === 0) return;
+
+    const chatData = {
+      id: currentChatId,
+      title: chatTitle,
+      messages: messages,
+      createdAt: messages[0]?.timestamp || new Date().toISOString(),
+      lastUpdated: new Date().toISOString()
+    };
+
+    saveChatToHistory(user.id, chatData);
+  };
 
   // Handle file upload success
   const handleUploadSuccess = (message, filename) => {
     // Add success message to chat
     const uploadMessage = {
-      id: Date.now(),
+      id: `upload_${Date.now()}`,
       role: 'assistant',
-      content: `✅ Successfully uploaded and processed "${filename}". You can now ask questions about this document!`
+      content: `✅ Successfully uploaded and processed "${filename}". You can now ask questions about this document!`,
+      timestamp: new Date().toISOString()
     };
     
     setMessages(prev => [...prev, uploadMessage]);
@@ -126,9 +163,10 @@ export default function Chat() {
   const handleUploadError = (error) => {
     // Add error message to chat
     const errorMessage = {
-      id: Date.now(),
+      id: `error_${Date.now()}`,
       role: 'assistant',
-      content: `❌ Upload failed: ${error}. Please try again with a PDF file under 16MB.`
+      content: `❌ Upload failed: ${error}. Please try again with a PDF file under 16MB.`,
+      timestamp: new Date().toISOString()
     };
     
     setMessages(prev => [...prev, errorMessage]);
@@ -159,9 +197,10 @@ export default function Chat() {
     // If message is flagged, show warning and don't process
     if (activity.flagged) {
       const warningMessage = {
-        id: Date.now(),
+        id: `warning_${Date.now()}`,
         role: 'assistant',
-        content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`
+        content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`,
+        timestamp: new Date().toISOString()
       };
       
       setMessages(prev => [...prev, warningMessage]);
@@ -179,12 +218,21 @@ export default function Chat() {
     
     // Add user message to chat
     const userMessage = {
-      id: Date.now(),
+      id: `user_${Date.now()}`,
       role: 'user',
-      content: message
+      content: message,
+      timestamp: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    
+    // Update chat title if this is the first user message
+    if (newMessages.filter(m => m.role === 'user').length === 1) {
+      const newTitle = generateChatTitle(message);
+      setChatTitle(newTitle);
+    }
+    
     setIsLoading(true);
 
     try {
@@ -207,9 +255,10 @@ export default function Chat() {
       const data = await response.json();
       
       const aiMessage = {
-        id: Date.now() + 1,
+        id: `ai_${Date.now()}`,
         role: 'assistant',
-        content: data.response
+        content: data.response,
+        timestamp: new Date().toISOString()
       };
       
       setMessages(prev => [...prev, aiMessage]);
@@ -240,9 +289,10 @@ export default function Chat() {
         : "I'm sorry, there was an error processing your request. Please try again.";
         
       setMessages(prev => [...prev, {
-        id: Date.now() + 1,
+        id: `error_${Date.now()}`,
         role: 'assistant',
-        content: errorMessage
+        content: errorMessage,
+        timestamp: new Date().toISOString()
       }]);
     } finally {
       setIsLoading(false);
@@ -250,12 +300,26 @@ export default function Chat() {
   };
 
   // Handle starting a new chat
-  const handleNewChat = () => {
-    setMessages([{
+  const handleNewChat = (newChatId = null) => {
+    // Save current chat before switching
+    if (currentChatId && messages.length > 0) {
+      saveChatToStorage();
+    }
+
+    // Initialize new chat
+    const chatId = newChatId || createNewChat().id;
+    setCurrentChatId(chatId);
+    setChatTitle('New Chat');
+    setUploadedFiles([]);
+    
+    const welcomeMessage = {
       id: 'welcome',
       role: 'assistant',
-      content: `Hello ${user?.name}! I'm your Tutortron AI tutor. You can upload course materials (PDF files) or start asking questions directly. How can I help you with your studies today?`
-    }]);
+      content: `Hello! I'm your Tutortron AI tutor. You can upload course materials (PDF files) or start asking questions directly. How can I help you with your studies today?`,
+      timestamp: new Date().toISOString()
+    };
+    
+    setMessages([welcomeMessage]);
     
     // Track new chat session
     if (user) {
@@ -268,6 +332,30 @@ export default function Chat() {
     }
   };
 
+  // Handle loading a chat from history
+  const handleLoadChat = (chat) => {
+    // Save current chat before switching
+    if (currentChatId && messages.length > 0) {
+      saveChatToStorage();
+    }
+
+    // Load the selected chat
+    setCurrentChatId(chat.id);
+    setChatTitle(chat.title);
+    setMessages(chat.messages || []);
+    setUploadedFiles([]); // Reset uploaded files for now
+    
+    // Track chat load
+    if (user) {
+      activityTracker.trackActivity(
+        user.id,
+        user.name,
+        'Chat Loaded',
+        `User loaded chat: ${chat.title}`
+      );
+    }
+  };
+
   // Handle sidebar toggle
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
@@ -276,6 +364,11 @@ export default function Chat() {
   // Handle logout
   const handleLogout = () => {
     if (user) {
+      // Save current chat before logout
+      if (currentChatId && messages.length > 0) {
+        saveChatToStorage();
+      }
+      
       // Track logout activity
       activityTracker.trackActivity(
         user.id,
@@ -327,7 +420,7 @@ export default function Chat() {
   return (
     <div className={`${geistSans.variable} ${geistMono.variable} font-[family-name:var(--font-geist-sans)] flex h-screen overflow-hidden bg-gray-50 dark:bg-black/10`}>
       <Head>
-        <title>Tutortron Chat</title>
+        <title>{chatTitle} - Tutortron</title>
         <meta name="description" content="Chat with your AI tutor" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
@@ -336,11 +429,11 @@ export default function Chat() {
       {/* Sidebar for chat history */}
       <ChatSidebar 
         user={user}
-        chatHistory={chatHistory}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onNewChat={handleNewChat}
-        onLogout={handleLogout}
+        onLoadChat={handleLoadChat}
+        currentChatId={currentChatId}
       />
 
       {/* Main chat container */}
@@ -348,7 +441,7 @@ export default function Chat() {
         {/* Chat header */}
         <ChatHeader 
           onMenuClick={toggleSidebar} 
-          title="Tutortron AI Tutor"
+          title={chatTitle}
         />
 
         {/* Chat messages */}
