@@ -1,4 +1,5 @@
-// src/pages/chat.js - Updated version with server-side storage
+// src/pages/chat.js - FIXED VERSION with proper title generation
+
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -18,7 +19,8 @@ import {
   createNewChat,
   saveChatToHistory,
   addMessageToChat,
-  generateChatTitle
+  generateChatTitle,
+  updateChatTitle
 } from '@/utils/chatStorageServer';
 
 const geistSans = Geist({
@@ -43,6 +45,8 @@ export default function Chat() {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
   const [isChatSaved, setIsChatSaved] = useState(false);
+  const [serverConnectionError, setServerConnectionError] = useState(false);
+  const [titleUpdated, setTitleUpdated] = useState(false); // Track if title has been updated
   const messageEndRef = useRef(null);
   const router = useRouter();
 
@@ -89,10 +93,10 @@ export default function Chat() {
 
   // Auto-save chat when messages change (only if there's meaningful content)
   useEffect(() => {
-    if (currentChatId && user && hasRealContent(messages) && !isChatSaved) {
+    if (currentChatId && user && hasRealContent(messages) && !isChatSaved && !serverConnectionError) {
       saveChatToServer();
     }
-  }, [messages, currentChatId, user, isChatSaved]);
+  }, [messages, currentChatId, user, isChatSaved, serverConnectionError]);
 
   // Check user status (blocked/active)
   const checkUserStatus = async (userId) => {
@@ -113,6 +117,8 @@ export default function Chat() {
     setCurrentChatId(tempChatId);
     setChatTitle('New Chat');
     setIsChatSaved(false);
+    setServerConnectionError(false);
+    setTitleUpdated(false); // Reset title updated flag
     
     // Set welcome message
     const welcomeMessage = {
@@ -133,12 +139,24 @@ export default function Chat() {
     if (!user || !currentChatId || !hasRealContent(messages) || isChatSaved) return;
 
     try {
+      setServerConnectionError(false);
+
       // If this is a temporary chat ID, create a real chat
       let chatId = currentChatId;
       if (currentChatId.startsWith('temp_')) {
-        const newChatData = await createNewChat(user.id, user.name, user.email, chatTitle);
-        chatId = newChatData.id;
-        setCurrentChatId(chatId);
+        try {
+          const newChatData = await createNewChat(user.id, user.name, user.email, chatTitle);
+          if (newChatData && newChatData.id) {
+            chatId = newChatData.id;
+            setCurrentChatId(chatId);
+          } else {
+            throw new Error('Failed to create chat on server');
+          }
+        } catch (createError) {
+          console.error('Error creating chat on server:', createError);
+          setServerConnectionError(true);
+          return; // Don't proceed if we can't create the chat
+        }
       }
 
       const chatData = {
@@ -154,9 +172,36 @@ export default function Chat() {
       if (success) {
         setIsChatSaved(true);
         refreshSidebarHistory();
+      } else {
+        console.warn('Failed to save chat to server, but continuing locally');
+        setServerConnectionError(true);
       }
     } catch (error) {
       console.error('Error saving chat to server:', error);
+      setServerConnectionError(true);
+    }
+  };
+
+  // FIXED: Update chat title from first user message
+  const updateChatTitleFromMessage = async (firstUserMessage, chatId) => {
+    if (!firstUserMessage || titleUpdated || !user || serverConnectionError) return;
+
+    try {
+      const newTitle = generateChatTitle(firstUserMessage);
+      
+      // Update title locally
+      setChatTitle(newTitle);
+      setTitleUpdated(true);
+      
+      // Update title on server if chat exists
+      if (chatId && !chatId.startsWith('temp_')) {
+        await updateChatTitle(user.id, chatId, newTitle);
+        refreshSidebarHistory();
+      }
+      
+      console.log('Updated chat title to:', newTitle);
+    } catch (error) {
+      console.error('Error updating chat title:', error);
     }
   };
 
@@ -202,19 +247,40 @@ export default function Chat() {
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     
-    // Update chat title if this is the first user message
-    if (newMessages.filter(m => m.role === 'user').length === 1) {
-      const newTitle = generateChatTitle(message);
-      setChatTitle(newTitle);
+    // Check if this is the first user message and update title
+    const userMessages = newMessages.filter(m => m.role === 'user');
+    if (userMessages.length === 1 && !titleUpdated) {
+      // This is the first user message, update the title
+      await updateChatTitleFromMessage(message, currentChatId);
     }
 
     try {
       // Ensure we have a real chat ID for saving messages
       let chatIdForSaving = currentChatId;
-      if (currentChatId.startsWith('temp_')) {
-        const newChatData = await createNewChat(user.id, user.name, user.email, chatTitle || generateChatTitle(message));
-        chatIdForSaving = newChatData.id;
-        setCurrentChatId(chatIdForSaving);
+      if (currentChatId.startsWith('temp_') && !serverConnectionError) {
+        try {
+          // Use the updated title when creating the chat
+          const titleToUse = titleUpdated ? chatTitle : generateChatTitle(message);
+          const newChatData = await createNewChat(user.id, user.name, user.email, titleToUse);
+          if (newChatData && newChatData.id) {
+            chatIdForSaving = newChatData.id;
+            setCurrentChatId(chatIdForSaving);
+            setServerConnectionError(false);
+            
+            // Update the title if it wasn't already updated
+            if (!titleUpdated) {
+              setChatTitle(titleToUse);
+              setTitleUpdated(true);
+            }
+          } else {
+            throw new Error('Failed to create chat');
+          }
+        } catch (createError) {
+          console.error('Error creating chat for message saving:', createError);
+          setServerConnectionError(true);
+          // Continue without server-side storage
+          chatIdForSaving = currentChatId;
+        }
       }
 
       // Call the chat API with chat ID for server storage
@@ -226,7 +292,7 @@ export default function Chat() {
           userId: user.id,
           userName: user.name,
           userEmail: user.email,
-          chatId: chatIdForSaving,
+          chatId: serverConnectionError ? null : chatIdForSaving, // Don't send chatId if server has issues
           sessionId: `session_${Date.now()}`
         }),
       });
@@ -257,17 +323,24 @@ export default function Chat() {
         role: 'assistant',
         content: data.response,
         timestamp: new Date().toISOString(),
-        savedToServer: true // Mark as already saved
+        savedToServer: !serverConnectionError // Only mark as saved if server is working
       };
       
       setMessages(prev => [...prev, aiMessage]);
       
-      // Mark chat as saved since messages are now in the database
-      setIsChatSaved(true);
-      refreshSidebarHistory();
+      // Mark chat as saved since messages are now in the database (if server is working)
+      if (!serverConnectionError) {
+        setIsChatSaved(true);
+        refreshSidebarHistory();
+      }
       
     } catch (error) {
       console.error('Error sending message:', error);
+      
+      // Check if it's a server connection error
+      if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+        setServerConnectionError(true);
+      }
       
       const errorMessage = error.message.includes('unavailable') 
         ? "The AI tutor service is currently unavailable. Please upload some course materials first or try again later."
@@ -300,15 +373,19 @@ export default function Chat() {
         setChatTitle(fullChat.title);
         setMessages(fullChat.messages || []);
         setIsChatSaved(true);
+        setServerConnectionError(false);
+        setTitleUpdated(true); // Mark as updated since we loaded an existing title
         setUploadedFiles([]); // Reset uploaded files for now
       }
     } catch (error) {
       console.error('Error loading chat:', error);
+      setServerConnectionError(true);
       // Fallback to basic chat data
       setCurrentChatId(chat.id);
       setChatTitle(chat.title);
       setMessages([]);
       setIsChatSaved(true);
+      setTitleUpdated(true);
     }
   };
 
@@ -367,6 +444,18 @@ export default function Chat() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
+      {/* Server Connection Warning */}
+      {serverConnectionError && (
+        <div className="fixed top-4 right-4 z-50 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 text-yellow-800 dark:text-yellow-300 px-4 py-2 rounded-lg shadow-lg">
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <span className="text-sm">Chat history may not be saved due to server connection issues</span>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar for chat history */}
       <ChatSidebar 
         user={user}
@@ -376,7 +465,7 @@ export default function Chat() {
         onLoadChat={handleLoadChat}
         currentChatId={currentChatId}
         refreshTrigger={sidebarRefreshTrigger}
-        useServerStorage={true} // Flag to indicate server storage mode
+        useServerStorage={!serverConnectionError} // Disable server storage if there are connection issues
       />
 
       {/* Main chat container */}
