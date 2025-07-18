@@ -1,4 +1,4 @@
-// src/utils/chatStorageServer.js - Updated to call Flask backend directly
+// src/utils/chatStorageServer.js - FIXED VERSION
 
 export const STORAGE_MODE = 'server'; // 'server' or 'local'
 
@@ -71,6 +71,8 @@ export const createNewChat = async (userId, userName, userEmail, title = 'New Ch
     });
     
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Server error creating chat:', errorText);
       throw new Error('Failed to create chat');
     }
     
@@ -96,17 +98,31 @@ export const saveChatToHistory = async (userId, userName, userEmail, chatData) =
   try {
     // If chat doesn't exist on server, create it first
     if (chatData.id.startsWith('temp_') || !await chatExistsOnServer(chatData.id)) {
-      await createNewChat(userId, userName, userEmail, chatData.title, chatData.id);
+      const newChat = await createNewChat(userId, userName, userEmail, chatData.title, chatData.id);
+      if (!newChat) {
+        throw new Error('Failed to create chat on server');
+      }
+      // Update chat ID if it was temporary
+      if (chatData.id.startsWith('temp_')) {
+        chatData.id = newChat.id;
+      }
     }
     
     // Save each message that hasn't been saved yet
     const messagesNeedingSave = chatData.messages.filter(msg => 
-      !msg.savedToServer && msg.id !== 'welcome'
+      !msg.savedToServer && 
+      msg.id !== 'welcome' && 
+      msg.role // Ensure message has a role
     );
     
     for (const message of messagesNeedingSave) {
-      await addMessageToChat(chatData.id, message.role, message.content, message.id, userId);
-      message.savedToServer = true;
+      try {
+        await addMessageToChat(chatData.id, message.role, message.content, message.id, userId);
+        message.savedToServer = true;
+      } catch (msgError) {
+        console.error('Failed to save message:', message.id, msgError);
+        // Continue with other messages
+      }
     }
     
     return true;
@@ -118,34 +134,52 @@ export const saveChatToHistory = async (userId, userName, userEmail, chatData) =
 };
 
 /**
- * Add a message to a chat on server
+ * Add a message to a chat on server - FIXED VERSION
  */
 export const addMessageToChat = async (chatId, role, content, messageId = null, userId = null) => {
   try {
+    // Validate inputs
+    if (!chatId || !role || !content) {
+      throw new Error('Missing required parameters: chatId, role, or content');
+    }
+
     const backendUrl = getBackendUrl();
+    const requestBody = {
+      role,
+      content,
+      messageId: messageId || `${role}_${Date.now()}`,
+      userId: userId || 'anonymous'
+    };
+
+    console.log('Adding message to chat:', chatId, requestBody);
+
     const response = await fetch(`${backendUrl}/api/chats/${chatId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        role,
-        content,
-        messageId,
-        userId
-      })
+      body: JSON.stringify(requestBody)
     });
     
     if (!response.ok) {
-      throw new Error('Failed to add message');
+      const errorText = await response.text();
+      console.error('Server error adding message:', response.status, errorText);
+      
+      // If it's a 404, the chat might not exist on server
+      if (response.status === 404) {
+        throw new Error('Chat not found on server');
+      }
+      
+      throw new Error(`Failed to add message: ${response.status} ${errorText}`);
     }
     
     const data = await response.json();
     return {
       messageId: data.messageId,
-      isFlagged: data.isFlagged,
-      flagReason: data.flagReason
+      isFlagged: data.isFlagged || false,
+      flagReason: data.flagReason || null
     };
   } catch (error) {
     console.error('Error adding message to server:', error);
+    // Re-throw the error so the calling function can handle it
     throw error;
   }
 };
@@ -166,6 +200,8 @@ export const updateChatTitle = async (userId, chatId, newTitle) => {
     });
     
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Server error updating chat title:', errorText);
       throw new Error('Failed to update chat title');
     }
     
@@ -187,6 +223,8 @@ export const deleteChatFromHistory = async (userId, chatId) => {
     });
     
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Server error deleting chat:', errorText);
       throw new Error('Failed to delete chat');
     }
     
@@ -206,6 +244,7 @@ const chatExistsOnServer = async (chatId) => {
     const response = await fetch(`${backendUrl}/api/chats/${chatId}`);
     return response.ok;
   } catch (error) {
+    console.error('Error checking if chat exists:', error);
     return false;
   }
 };

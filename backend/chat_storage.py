@@ -1,7 +1,9 @@
-# backend/chat_storage.py - New file for chat database operations
+# backend/chat_storage.py - FIXED VERSION
 import sqlite3
 import json
 import datetime
+import uuid
+import time
 from typing import List, Dict, Optional
 import logging
 
@@ -69,13 +71,33 @@ class ChatStorage:
             conn.commit()
             logger.info("✓ Chat database initialized successfully")
     
+    def _generate_unique_id(self, prefix=""):
+        """Generate a guaranteed unique ID"""
+        # Use UUID4 for guaranteed uniqueness
+        unique_id = str(uuid.uuid4())
+        if prefix:
+            return f"{prefix}_{unique_id}"
+        return unique_id
+    
     def create_chat(self, user_id: str, title: str, chat_id: str = None) -> str:
         """Create a new chat"""
         if not chat_id:
-            chat_id = f"chat_{int(datetime.datetime.utcnow().timestamp() * 1000)}"
+            chat_id = self._generate_unique_id("chat")
+        
+        # If chat_id starts with temp_, replace it with a proper UUID
+        if chat_id.startswith('temp_'):
+            chat_id = self._generate_unique_id("chat")
         
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            
+            # Check if chat already exists
+            cursor.execute('SELECT id FROM chats WHERE id = ?', (chat_id,))
+            if cursor.fetchone():
+                # Chat already exists, return existing ID
+                logger.info(f"Chat {chat_id} already exists")
+                return chat_id
+            
             cursor.execute('''
                 INSERT INTO chats (id, user_id, title, created_at, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -167,27 +189,47 @@ class ChatStorage:
     
     def add_message(self, chat_id: str, role: str, content: str, message_id: str = None, 
                    is_flagged: bool = False, flag_reason: str = None, metadata: Dict = None) -> str:
-        """Add a message to a chat"""
+        """Add a message to a chat - FIXED VERSION"""
         if not message_id:
-            message_id = f"{role}_{int(datetime.datetime.utcnow().timestamp() * 1000)}"
+            message_id = self._generate_unique_id(f"{role}_msg")
         
         metadata_json = json.dumps(metadata) if metadata else None
         
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
-            # Add message
-            cursor.execute('''
-                INSERT INTO messages (id, chat_id, role, content, timestamp, is_flagged, flag_reason, metadata)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
-            ''', (message_id, chat_id, role, content, is_flagged, flag_reason, metadata_json))
+            # Check if message already exists (prevent duplicates)
+            cursor.execute('SELECT id FROM messages WHERE id = ?', (message_id,))
+            if cursor.fetchone():
+                logger.warning(f"Message {message_id} already exists, skipping insert")
+                return message_id
             
-            # Update chat timestamp
-            cursor.execute('''
-                UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
-            ''', (chat_id,))
-            
-            conn.commit()
+            # Add message with retry logic for uniqueness
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    cursor.execute('''
+                        INSERT INTO messages (id, chat_id, role, content, timestamp, is_flagged, flag_reason, metadata)
+                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+                    ''', (message_id, chat_id, role, content, is_flagged, flag_reason, metadata_json))
+                    
+                    # Update chat timestamp
+                    cursor.execute('''
+                        UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
+                    ''', (chat_id,))
+                    
+                    conn.commit()
+                    break
+                    
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed" in str(e) and attempt < max_retries - 1:
+                        # Generate a new unique ID and retry
+                        message_id = self._generate_unique_id(f"{role}_msg")
+                        logger.warning(f"Message ID collision, retrying with new ID: {message_id}")
+                        continue
+                    else:
+                        logger.error(f"Failed to insert message after {max_retries} attempts: {e}")
+                        raise e
         
         logger.info(f"Added {role} message to chat {chat_id}")
         return message_id
