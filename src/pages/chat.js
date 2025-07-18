@@ -1,6 +1,5 @@
 // src/pages/chat.js - FIXED VERSION with proper title generation
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { Geist, Geist_Mono } from "next/font/google";
@@ -13,7 +12,7 @@ import ChatMessage from '@/components/chat/ChatMessage';
 import FileUpload from '@/components/chat/FileUpload';
 
 // Import server-side storage utilities
-import { 
+import {
   loadChatHistory,
   loadChatWithMessages,
   createNewChat,
@@ -49,6 +48,7 @@ export default function Chat() {
   const [titleUpdated, setTitleUpdated] = useState(false); // Track if title has been updated
   const messageEndRef = useRef(null);
   const router = useRouter();
+  const isInitializingChat = useRef(false);
 
   // Check authentication and user status
   useEffect(() => {
@@ -61,10 +61,10 @@ export default function Chat() {
     try {
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
-      
+
       // Check if user is blocked
       checkUserStatus(parsedUser.id);
-      
+
       // Initialize with a new chat
       initializeNewChat();
     } catch (error) {
@@ -76,13 +76,13 @@ export default function Chat() {
   // Check if chat has real content (not just welcome message)
   const hasRealContent = (messages) => {
     if (!messages || messages.length === 0) return false;
-    
-    const realMessages = messages.filter(msg => 
-      msg.id !== 'welcome' && 
+
+    const realMessages = messages.filter(msg =>
+      msg.id !== 'welcome' &&
       !msg.content.includes("Hello! I'm your Tutortron AI tutor") &&
       (msg.role === 'user' || (msg.role === 'assistant' && !msg.content.includes("✅ Successfully uploaded")))
     );
-    
+
     return realMessages.length > 0;
   };
 
@@ -90,13 +90,6 @@ export default function Chat() {
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  // Auto-save chat when messages change (only if there's meaningful content)
-  useEffect(() => {
-    if (currentChatId && user && hasRealContent(messages) && !isChatSaved && !serverConnectionError) {
-      saveChatToServer();
-    }
-  }, [messages, currentChatId, user, isChatSaved, serverConnectionError]);
 
   // Check user status (blocked/active)
   const checkUserStatus = async (userId) => {
@@ -111,25 +104,35 @@ export default function Chat() {
     }
   };
 
-  const initializeNewChat = () => {
-    // Create a temporary chat that won't be saved until there's content
+  const initializeNewChat = useCallback(() => {
+    // Prevent duplicate initialization
+    if (isInitializingChat.current) return false;
+    isInitializingChat.current = true;
+
+    // Create a temporary chat ID
     const tempChatId = `temp_${Date.now()}`;
     setCurrentChatId(tempChatId);
     setChatTitle('New Chat');
     setIsChatSaved(false);
     setServerConnectionError(false);
-    setTitleUpdated(false); // Reset title updated flag
-    
-    // Set welcome message
-    const welcomeMessage = {
+    setTitleUpdated(false);
+    setMessages([{
       id: 'welcome',
       role: 'assistant',
       content: `Hello! I'm your Tutortron AI tutor. You can upload course materials (PDF files) or start asking questions directly. How can I help you with your studies today?`,
       timestamp: new Date().toISOString()
-    };
-    
-    setMessages([welcomeMessage]);
-  };
+    }]);
+
+    // Don't save temp chats to history
+    // Real chats are created when the first message is sent
+
+    // Reset the flag after a short delay
+    setTimeout(() => {
+      isInitializingChat.current = false;
+    }, 1000);
+
+    return true;
+  }, []);
 
   const refreshSidebarHistory = () => {
     setSidebarRefreshTrigger(prev => prev + 1);
@@ -168,7 +171,7 @@ export default function Chat() {
       };
 
       const success = await saveChatToHistory(user.id, user.name, user.email, chatData);
-      
+
       if (success) {
         setIsChatSaved(true);
         refreshSidebarHistory();
@@ -182,23 +185,22 @@ export default function Chat() {
     }
   };
 
-  // FIXED: Update chat title from first user message
   const updateChatTitleFromMessage = async (firstUserMessage, chatId) => {
     if (!firstUserMessage || titleUpdated || !user || serverConnectionError) return;
 
     try {
       const newTitle = generateChatTitle(firstUserMessage);
-      
+
       // Update title locally
       setChatTitle(newTitle);
       setTitleUpdated(true);
-      
+
       // Update title on server if chat exists
       if (chatId && !chatId.startsWith('temp_')) {
         await updateChatTitle(user.id, chatId, newTitle);
         refreshSidebarHistory();
       }
-      
+
       console.log('Updated chat title to:', newTitle);
     } catch (error) {
       console.error('Error updating chat title:', error);
@@ -213,7 +215,7 @@ export default function Chat() {
       content: `✅ Successfully uploaded and processed "${filename}". You can now ask questions about this document!`,
       timestamp: new Date().toISOString()
     };
-    
+
     setMessages(prev => [...prev, uploadMessage]);
     setUploadedFiles(prev => [...prev, { name: filename, uploadedAt: new Date() }]);
     setShowFileUpload(false);
@@ -227,13 +229,13 @@ export default function Chat() {
       content: `❌ Upload failed: ${error}. Please try again with a PDF file under 16MB.`,
       timestamp: new Date().toISOString()
     };
-    
+
     setMessages(prev => [...prev, errorMessage]);
   };
 
   const handleSendMessage = async (message) => {
     if (!message.trim() || isBlocked || isLoading) return;
-    
+
     setIsLoading(true);
 
     // Add user message to chat immediately
@@ -243,10 +245,10 @@ export default function Chat() {
       content: message,
       timestamp: new Date().toISOString()
     };
-    
+
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    
+
     // Check if this is the first user message and update title
     const userMessages = newMessages.filter(m => m.role === 'user');
     if (userMessages.length === 1 && !titleUpdated) {
@@ -266,7 +268,7 @@ export default function Chat() {
             chatIdForSaving = newChatData.id;
             setCurrentChatId(chatIdForSaving);
             setServerConnectionError(false);
-            
+
             // Update the title if it wasn't already updated
             if (!titleUpdated) {
               setChatTitle(titleToUse);
@@ -287,8 +289,8 @@ export default function Chat() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message, 
+        body: JSON.stringify({
+          message,
           userId: user.id,
           userName: user.name,
           userEmail: user.email,
@@ -303,7 +305,7 @@ export default function Chat() {
       }
 
       const data = await response.json();
-      
+
       // Check if message was flagged
       if (data.isFlagged) {
         const flaggedMessage = {
@@ -312,12 +314,12 @@ export default function Chat() {
           content: data.response,
           timestamp: new Date().toISOString()
         };
-        
+
         setMessages(prev => [...prev, flaggedMessage]);
         setIsLoading(false);
         return;
       }
-      
+
       const aiMessage = {
         id: `ai_${Date.now()}`,
         role: 'assistant',
@@ -325,27 +327,27 @@ export default function Chat() {
         timestamp: new Date().toISOString(),
         savedToServer: !serverConnectionError // Only mark as saved if server is working
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
-      
+
       // Mark chat as saved since messages are now in the database (if server is working)
       if (!serverConnectionError) {
         setIsChatSaved(true);
         refreshSidebarHistory();
       }
-      
+
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       // Check if it's a server connection error
       if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
         setServerConnectionError(true);
       }
-      
-      const errorMessage = error.message.includes('unavailable') 
+
+      const errorMessage = error.message.includes('unavailable')
         ? "The AI tutor service is currently unavailable. Please upload some course materials first or try again later."
         : "I'm sorry, there was an error processing your request. Please try again.";
-        
+
       setMessages(prev => [...prev, {
         id: `error_${Date.now()}`,
         role: 'assistant',
@@ -357,9 +359,9 @@ export default function Chat() {
     }
   };
 
-  // Handle starting a new chat
   const handleNewChat = () => {
-    initializeNewChat();
+    const created = initializeNewChat();
+    return created; // will return true if chat was initialized
   };
 
   // Handle loading a chat from history
@@ -367,7 +369,7 @@ export default function Chat() {
     try {
       // Load full chat with messages from server
       const fullChat = await loadChatWithMessages(chat.id, user.id);
-      
+
       if (fullChat) {
         setCurrentChatId(fullChat.id);
         setChatTitle(fullChat.title);
@@ -421,7 +423,7 @@ export default function Chat() {
             Account Temporarily Restricted
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Your account has been temporarily restricted due to violations of our community guidelines. 
+            Your account has been temporarily restricted due to violations of our community guidelines.
             Please contact support if you believe this is an error.
           </p>
           <button
@@ -457,7 +459,7 @@ export default function Chat() {
       )}
 
       {/* Sidebar for chat history */}
-      <ChatSidebar 
+      <ChatSidebar
         user={user}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -471,8 +473,8 @@ export default function Chat() {
       {/* Main chat container */}
       <div className="flex flex-col flex-1 w-full h-full overflow-hidden">
         {/* Chat header */}
-        <ChatHeader 
-          onMenuClick={toggleSidebar} 
+        <ChatHeader
+          onMenuClick={toggleSidebar}
           title={chatTitle}
         />
 
@@ -521,12 +523,12 @@ export default function Chat() {
 
             {/* Chat messages */}
             {messages.map((message) => (
-              <ChatMessage 
-                key={message.id} 
-                message={message} 
+              <ChatMessage
+                key={message.id}
+                message={message}
               />
             ))}
-            
+
             {isLoading && (
               <div className="flex items-center text-gray-500 my-4">
                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3">
@@ -539,7 +541,7 @@ export default function Chat() {
                 </div>
               </div>
             )}
-            
+
             <div ref={messageEndRef} />
           </div>
         </div>
@@ -547,8 +549,8 @@ export default function Chat() {
         {/* Chat input */}
         <div className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-black/5 p-4">
           <div className="max-w-3xl mx-auto">
-            <ChatInput 
-              onSendMessage={handleSendMessage} 
+            <ChatInput
+              onSendMessage={handleSendMessage}
               isLoading={isLoading}
               disabled={isBlocked}
             />

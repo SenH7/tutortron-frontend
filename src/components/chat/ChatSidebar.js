@@ -1,7 +1,7 @@
 // src/components/chat/ChatSidebar.js - Updated version with server storage
 import { useState, useEffect } from 'react';
 import Button from '../ui/Button';
-import { 
+import {
   loadChatHistory,
   createNewChat,
   updateChatTitle,
@@ -21,7 +21,7 @@ const DeleteModal = ({ isOpen, chatTitle, onConfirm, onCancel }) => {
         <p className="text-gray-600 dark:text-gray-300 mb-6">
           Are you sure you want to delete this chat? This action cannot be undone and will remove it from all your devices.
         </p>
-        
+
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
@@ -41,15 +41,15 @@ const DeleteModal = ({ isOpen, chatTitle, onConfirm, onCancel }) => {
   );
 };
 
-const ChatSidebar = ({ 
-  user, 
-  isOpen, 
-  onClose, 
-  onNewChat, 
-  onLoadChat, 
-  currentChatId, 
+const ChatSidebar = ({
+  user,
+  isOpen,
+  onClose,
+  onNewChat,
+  onLoadChat,
+  currentChatId,
   refreshTrigger,
-  useServerStorage = true 
+  useServerStorage = true
 }) => {
   const [chatHistory, setChatHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -88,10 +88,10 @@ const ChatSidebar = ({
 
   const refreshChatHistory = async () => {
     if (!user) return;
-    
+
     setIsLoadingHistory(true);
     setError(null);
-    
+
     try {
       const chats = await loadChatHistory(user.id);
       setChatHistory(chats);
@@ -104,12 +104,24 @@ const ChatSidebar = ({
   };
 
   const handleNewChat = async () => {
+    // Prevent double-clicks
+    if (isLoading) return;
+
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      onNewChat(); // This will initialize a temp chat in the parent component
-      await refreshChatHistory(); // Refresh to show any existing chats
+      // Only call onNewChat, don't refresh history immediately
+      // as it might cause duplicate entries
+      const wasNewChatCreated = await onNewChat();
+
+      // Add a small delay to ensure the new chat is properly created
+      // before refreshing the history
+      if (wasNewChatCreated) {
+        setTimeout(async () => {
+          await refreshChatHistory(); // ✅ Only refresh if new chat was created
+        }, 500);
+      }
     } catch (error) {
       console.error('Error creating new chat:', error);
       setError('Failed to create new chat. Please try again.');
@@ -185,7 +197,7 @@ const ChatSidebar = ({
       const success = await deleteChatFromHistory(user.id, deleteModal.chatId);
       if (success) {
         await refreshChatHistory();
-        
+
         // If deleted chat was current chat, start a new one
         if (currentChatId === deleteModal.chatId) {
           handleNewChat();
@@ -279,7 +291,7 @@ const ChatSidebar = ({
         {error && (
           <div className="mx-4 mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm rounded-lg">
             {error}
-            <button 
+            <button
               onClick={() => setError(null)}
               className="ml-2 text-red-600 dark:text-red-300 hover:text-red-800 dark:hover:text-red-100"
             >
@@ -332,7 +344,7 @@ const ChatSidebar = ({
               )}
             </button>
           </div>
-          
+
           {isLoadingHistory ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
@@ -346,11 +358,10 @@ const ChatSidebar = ({
               {chatHistory.map((chat) => (
                 <div
                   key={chat.id}
-                  className={`relative group rounded-lg transition-all duration-200 ${
-                    currentChatId === chat.id 
-                      ? 'bg-gray-100 dark:bg-white/10' 
-                      : 'hover:bg-gray-50 dark:hover:bg-white/5 hover:shadow-md hover:shadow-gray-200/50 dark:hover:shadow-black/20'
-                  }`}
+                  className={`relative group rounded-lg transition-all duration-200 ${currentChatId === chat.id
+                    ? 'bg-gray-100 dark:bg-white/10'
+                    : 'hover:bg-gray-50 dark:hover:bg-white/5 hover:shadow-md hover:shadow-gray-200/50 dark:hover:shadow-black/20'
+                    }`}
                 >
                   <div
                     onClick={() => handleLoadChat(chat)}
@@ -393,7 +404,7 @@ const ChatSidebar = ({
                         </>
                       )}
                     </div>
-                    
+
                     {/* Three-dot menu button */}
                     {editingChat !== chat.id && (
                       <div className="relative">
@@ -406,7 +417,7 @@ const ChatSidebar = ({
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
                           </svg>
                         </button>
-                        
+
                         {/* Dropdown menu */}
                         {activeMenu === chat.id && (
                           <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-50">
