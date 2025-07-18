@@ -1,3 +1,4 @@
+# backend/requirements.txt - UPDATED VERSION
 flask==2.3.3
 flask-cors==4.0.0
 python-dotenv==1.0.0
@@ -7,3 +8,12 @@ qdrant-client==1.11.3
 sentence-transformers==2.2.2
 numpy==1.24.3
 werkzeug==2.3.7
+
+# Additional dependencies for server-side chat storage
+# Note: sqlite3 is built into Python, but these might be needed for production
+# Uncomment if plan to use PostgreSQL or MySQL instead of SQLite:
+# psycopg2-binary==2.9.7  # For PostgreSQL
+# PyMySQL==1.1.0          # For MySQL
+
+# For enhanced datetime handling
+python-dateutil==2.8.2

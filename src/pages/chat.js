@@ -1,4 +1,4 @@
-// src/pages/chat.js - Updated with proper chat history management
+// src/pages/chat.js - Updated version with server-side storage
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -11,14 +11,15 @@ import ChatInput from '@/components/chat/ChatInput';
 import ChatMessage from '@/components/chat/ChatMessage';
 import FileUpload from '@/components/chat/FileUpload';
 
-// Import activity tracker and chat storage utilities
-import activityTracker from '@/utils/activityTracker';
+// Import server-side storage utilities
 import { 
-  saveChatToHistory, 
-  createNewChat, 
-  generateChatTitle,
-  getChatById 
-} from '@/utils/chatStorage';
+  loadChatHistory,
+  loadChatWithMessages,
+  createNewChat,
+  saveChatToHistory,
+  addMessageToChat,
+  generateChatTitle
+} from '@/utils/chatStorageServer';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,6 +42,7 @@ export default function Chat() {
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
+  const [isChatSaved, setIsChatSaved] = useState(false);
   const messageEndRef = useRef(null);
   const router = useRouter();
 
@@ -59,14 +61,6 @@ export default function Chat() {
       // Check if user is blocked
       checkUserStatus(parsedUser.id);
       
-      // Track login activity
-      activityTracker.trackActivity(
-        parsedUser.id,
-        parsedUser.name,
-        'Login',
-        'User logged into chat interface'
-      );
-
       // Initialize with a new chat
       initializeNewChat();
     } catch (error) {
@@ -79,7 +73,6 @@ export default function Chat() {
   const hasRealContent = (messages) => {
     if (!messages || messages.length === 0) return false;
     
-    // Filter out welcome messages and system messages
     const realMessages = messages.filter(msg => 
       msg.id !== 'welcome' && 
       !msg.content.includes("Hello! I'm your Tutortron AI tutor") &&
@@ -94,18 +87,18 @@ export default function Chat() {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Save current chat whenever messages change (only if there's meaningful content)
+  // Auto-save chat when messages change (only if there's meaningful content)
   useEffect(() => {
-    if (currentChatId && user && hasRealContent(messages)) {
-      saveChatToStorage(); // This will auto-refresh sidebar when temp chat becomes real
+    if (currentChatId && user && hasRealContent(messages) && !isChatSaved) {
+      saveChatToServer();
     }
-  }, [messages, currentChatId, user]);
+  }, [messages, currentChatId, user, isChatSaved]);
 
   // Check user status (blocked/active)
   const checkUserStatus = async (userId) => {
     try {
-      // Mock API call - in real app, check user status from backend
-      const blockedUsers = ['3']; // Mock blocked user IDs
+      // In a real implementation, you'd check this from the server
+      const blockedUsers = ['3'];
       if (blockedUsers.includes(userId)) {
         setIsBlocked(true);
       }
@@ -119,6 +112,7 @@ export default function Chat() {
     const tempChatId = `temp_${Date.now()}`;
     setCurrentChatId(tempChatId);
     setChatTitle('New Chat');
+    setIsChatSaved(false);
     
     // Set welcome message
     const welcomeMessage = {
@@ -131,44 +125,43 @@ export default function Chat() {
     setMessages([welcomeMessage]);
   };
 
-  // Function to refresh sidebar history
   const refreshSidebarHistory = () => {
     setSidebarRefreshTrigger(prev => prev + 1);
   };
 
-  const saveChatToStorage = () => {
-    if (!user || !currentChatId || !hasRealContent(messages)) return;
+  const saveChatToServer = async () => {
+    if (!user || !currentChatId || !hasRealContent(messages) || isChatSaved) return;
 
-    // If this is a temporary chat ID, create a real chat
-    let chatId = currentChatId;
-    let wasConverted = false;
-    if (currentChatId.startsWith('temp_')) {
-      const newChat = createNewChat();
-      chatId = newChat.id;
-      setCurrentChatId(chatId);
-      wasConverted = true;
-    }
+    try {
+      // If this is a temporary chat ID, create a real chat
+      let chatId = currentChatId;
+      if (currentChatId.startsWith('temp_')) {
+        const newChatData = await createNewChat(user.id, user.name, user.email, chatTitle);
+        chatId = newChatData.id;
+        setCurrentChatId(chatId);
+      }
 
-    const chatData = {
-      id: chatId,
-      title: chatTitle,
-      messages: messages,
-      createdAt: messages[0]?.timestamp || new Date().toISOString(),
-      lastUpdated: new Date().toISOString()
-    };
+      const chatData = {
+        id: chatId,
+        title: chatTitle,
+        messages: messages.filter(msg => msg.id !== 'welcome'), // Exclude welcome message
+        createdAt: messages[0]?.timestamp || new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      };
 
-    const success = saveChatToHistory(user.id, chatData);
-    
-    // If chat was successfully saved and it was a conversion from temp to real chat,
-    // trigger sidebar refresh so the new chat appears immediately
-    if (success && wasConverted) {
-      refreshSidebarHistory();
+      const success = await saveChatToHistory(user.id, user.name, user.email, chatData);
+      
+      if (success) {
+        setIsChatSaved(true);
+        refreshSidebarHistory();
+      }
+    } catch (error) {
+      console.error('Error saving chat to server:', error);
     }
   };
 
   // Handle file upload success
   const handleUploadSuccess = (message, filename) => {
-    // Add success message to chat
     const uploadMessage = {
       id: `upload_${Date.now()}`,
       role: 'assistant',
@@ -177,28 +170,12 @@ export default function Chat() {
     };
     
     setMessages(prev => [...prev, uploadMessage]);
-    
-    // Track the upload
-    if (user) {
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'File Upload',
-        `Successfully uploaded: ${filename}`,
-        null
-      );
-    }
-    
-    // Add to uploaded files list
     setUploadedFiles(prev => [...prev, { name: filename, uploadedAt: new Date() }]);
-    
-    // Hide upload interface
     setShowFileUpload(false);
   };
 
   // Handle file upload error
   const handleUploadError = (error) => {
-    // Add error message to chat
     const errorMessage = {
       id: `error_${Date.now()}`,
       role: 'assistant',
@@ -207,53 +184,14 @@ export default function Chat() {
     };
     
     setMessages(prev => [...prev, errorMessage]);
-    
-    // Track the error
-    if (user) {
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Upload Error',
-        `File upload failed: ${error}`
-      );
-    }
   };
 
   const handleSendMessage = async (message) => {
-    if (!message.trim() || isBlocked) return;
+    if (!message.trim() || isBlocked || isLoading) return;
     
-    // Track user message activity
-    const activity = activityTracker.trackActivity(
-      user.id,
-      user.name,
-      'Chat Message',
-      'User sent a message to AI tutor',
-      message
-    );
+    setIsLoading(true);
 
-    // If message is flagged, show warning and don't process
-    if (activity.flagged) {
-      const warningMessage = {
-        id: `warning_${Date.now()}`,
-        role: 'assistant',
-        content: `⚠️ Your message has been flagged for review. Reason: ${activity.flagReason}. Please ensure your messages follow our community guidelines.`,
-        timestamp: new Date().toISOString()
-      };
-      
-      setMessages(prev => [...prev, warningMessage]);
-      
-      // Track the warning
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Content Warning',
-        `User received warning for flagged content: ${activity.flagReason}`
-      );
-      
-      return;
-    }
-    
-    // Add user message to chat
+    // Add user message to chat immediately
     const userMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
@@ -268,26 +206,28 @@ export default function Chat() {
     if (newMessages.filter(m => m.role === 'user').length === 1) {
       const newTitle = generateChatTitle(message);
       setChatTitle(newTitle);
-      
-      // Convert temp chat to real chat if needed
-      if (currentChatId.startsWith('temp_')) {
-        const newChat = createNewChat(newTitle);
-        setCurrentChatId(newChat.id);
-        // The useEffect will trigger saveChatToStorage and refresh sidebar
-      }
     }
-    
-    setIsLoading(true);
 
     try {
-      // Call the real API
+      // Ensure we have a real chat ID for saving messages
+      let chatIdForSaving = currentChatId;
+      if (currentChatId.startsWith('temp_')) {
+        const newChatData = await createNewChat(user.id, user.name, user.email, chatTitle || generateChatTitle(message));
+        chatIdForSaving = newChatData.id;
+        setCurrentChatId(chatIdForSaving);
+      }
+
+      // Call the chat API with chat ID for server storage
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message, 
           userId: user.id,
-          sessionId: activity.sessionId 
+          userName: user.name,
+          userEmail: user.email,
+          chatId: chatIdForSaving,
+          sessionId: `session_${Date.now()}`
         }),
       });
 
@@ -298,38 +238,37 @@ export default function Chat() {
 
       const data = await response.json();
       
+      // Check if message was flagged
+      if (data.isFlagged) {
+        const flaggedMessage = {
+          id: `flagged_${Date.now()}`,
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date().toISOString()
+        };
+        
+        setMessages(prev => [...prev, flaggedMessage]);
+        setIsLoading(false);
+        return;
+      }
+      
       const aiMessage = {
         id: `ai_${Date.now()}`,
         role: 'assistant',
         content: data.response,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        savedToServer: true // Mark as already saved
       };
       
       setMessages(prev => [...prev, aiMessage]);
       
-      // Track AI response
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'AI Response',
-        'AI tutor responded to user message',
-        data.response
-      );
-      
-      // Note: The useEffect will automatically save and refresh sidebar when AI responds
+      // Mark chat as saved since messages are now in the database
+      setIsChatSaved(true);
+      refreshSidebarHistory();
       
     } catch (error) {
       console.error('Error sending message:', error);
       
-      // Track error
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Error',
-        'Failed to get AI response'
-      );
-      
-      // Add error message
       const errorMessage = error.message.includes('unavailable') 
         ? "The AI tutor service is currently unavailable. Please upload some course materials first or try again later."
         : "I'm sorry, there was an error processing your request. Please try again.";
@@ -346,47 +285,30 @@ export default function Chat() {
   };
 
   // Handle starting a new chat
-  const handleNewChat = (newChatId = null) => {
-    // Save current chat before switching (only if it has real content)
-    if (currentChatId && hasRealContent(messages)) {
-      saveChatToStorage();
-    }
-
-    // Initialize new temporary chat
+  const handleNewChat = () => {
     initializeNewChat();
-    
-    // Track new chat session
-    if (user) {
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'New Chat Session',
-        'User started a new chat session'
-      );
-    }
   };
 
   // Handle loading a chat from history
-  const handleLoadChat = (chat) => {
-    // Save current chat before switching (only if it has real content)
-    if (currentChatId && hasRealContent(messages)) {
-      saveChatToStorage();
-    }
-
-    // Load the selected chat
-    setCurrentChatId(chat.id);
-    setChatTitle(chat.title);
-    setMessages(chat.messages || []);
-    setUploadedFiles([]); // Reset uploaded files for now
-    
-    // Track chat load
-    if (user) {
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Chat Loaded',
-        `User loaded chat: ${chat.title}`
-      );
+  const handleLoadChat = async (chat) => {
+    try {
+      // Load full chat with messages from server
+      const fullChat = await loadChatWithMessages(chat.id, user.id);
+      
+      if (fullChat) {
+        setCurrentChatId(fullChat.id);
+        setChatTitle(fullChat.title);
+        setMessages(fullChat.messages || []);
+        setIsChatSaved(true);
+        setUploadedFiles([]); // Reset uploaded files for now
+      }
+    } catch (error) {
+      console.error('Error loading chat:', error);
+      // Fallback to basic chat data
+      setCurrentChatId(chat.id);
+      setChatTitle(chat.title);
+      setMessages([]);
+      setIsChatSaved(true);
     }
   };
 
@@ -397,21 +319,6 @@ export default function Chat() {
 
   // Handle logout
   const handleLogout = () => {
-    if (user) {
-      // Save current chat before logout (only if it has real content)
-      if (currentChatId && hasRealContent(messages)) {
-        saveChatToStorage();
-      }
-      
-      // Track logout activity
-      activityTracker.trackActivity(
-        user.id,
-        user.name,
-        'Logout',
-        'User logged out of chat interface'
-      );
-    }
-    
     localStorage.removeItem('tutortronUser');
     router.push('/');
   };
@@ -468,7 +375,8 @@ export default function Chat() {
         onNewChat={handleNewChat}
         onLoadChat={handleLoadChat}
         currentChatId={currentChatId}
-        refreshTrigger={sidebarRefreshTrigger} // Pass refresh trigger
+        refreshTrigger={sidebarRefreshTrigger}
+        useServerStorage={true} // Flag to indicate server storage mode
       />
 
       {/* Main chat container */}

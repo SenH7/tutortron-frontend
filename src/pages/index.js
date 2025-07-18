@@ -38,7 +38,7 @@ export default function Home() {
     }
   }, [router]);
 
-  // Show loading state while checking authentication
+  // Show loading state while checking authentication, remove this page
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">

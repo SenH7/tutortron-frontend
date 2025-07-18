@@ -1,13 +1,12 @@
-// src/components/chat/ChatSidebar.js - Fixed version with proper chat handling
+// src/components/chat/ChatSidebar.js - Updated version with server storage
 import { useState, useEffect } from 'react';
 import Button from '../ui/Button';
 import { 
-  loadChatHistory as loadChats, 
-  createNewChat, 
-  saveChatToHistory,
-  deleteChatFromHistory,
-  updateChatTitle 
-} from '@/utils/chatStorage';
+  loadChatHistory,
+  createNewChat,
+  updateChatTitle,
+  deleteChatFromHistory
+} from '@/utils/chatStorageServer';
 
 // Custom Delete Modal Component
 const DeleteModal = ({ isOpen, chatTitle, onConfirm, onCancel }) => {
@@ -20,7 +19,7 @@ const DeleteModal = ({ isOpen, chatTitle, onConfirm, onCancel }) => {
           Delete chat?
         </h3>
         <p className="text-gray-600 dark:text-gray-300 mb-6">
-          Are you sure you want to delete this chat?
+          Are you sure you want to delete this chat? This action cannot be undone and will remove it from all your devices.
         </p>
         
         <div className="flex gap-3 justify-end">
@@ -42,22 +41,33 @@ const DeleteModal = ({ isOpen, chatTitle, onConfirm, onCancel }) => {
   );
 };
 
-const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChatId, refreshTrigger }) => {
+const ChatSidebar = ({ 
+  user, 
+  isOpen, 
+  onClose, 
+  onNewChat, 
+  onLoadChat, 
+  currentChatId, 
+  refreshTrigger,
+  useServerStorage = true 
+}) => {
   const [chatHistory, setChatHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
   const [editingChat, setEditingChat] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, chatId: null, chatTitle: '' });
+  const [error, setError] = useState(null);
 
-  // Load chat history from localStorage when component mounts
+  // Load chat history when component mounts or user changes
   useEffect(() => {
     if (user) {
       refreshChatHistory();
     }
-  }, [user]);
+  }, [user, useServerStorage]);
 
-  // Refresh chat history when refreshTrigger changes (when new chats are created)
+  // Refresh chat history when refreshTrigger changes
   useEffect(() => {
     if (user && refreshTrigger > 0) {
       refreshChatHistory();
@@ -76,22 +86,33 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
     }
   }, [activeMenu]);
 
-  const refreshChatHistory = () => {
-    if (user) {
-      const chats = loadChats(user.id);
+  const refreshChatHistory = async () => {
+    if (!user) return;
+    
+    setIsLoadingHistory(true);
+    setError(null);
+    
+    try {
+      const chats = await loadChatHistory(user.id);
       setChatHistory(chats);
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      setError('Failed to load chat history. Please try again.');
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
-  const handleNewChat = () => {
+  const handleNewChat = async () => {
     setIsLoading(true);
+    setError(null);
     
     try {
-      // Don't create or save a new chat here - just tell parent to initialize a new temporary chat
-      onNewChat(); // This will create a temporary chat that won't be saved until there's content
-      refreshChatHistory(); // Refresh to update any existing chats
+      onNewChat(); // This will initialize a temp chat in the parent component
+      await refreshChatHistory(); // Refresh to show any existing chats
     } catch (error) {
       console.error('Error creating new chat:', error);
+      setError('Failed to create new chat. Please try again.');
     } finally {
       setIsLoading(false);
       onClose(); // Close sidebar on mobile
@@ -116,20 +137,31 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
     setActiveMenu(null);
   };
 
-  const handleRenameSubmit = (chatId) => {
-    if (editTitle.trim() && editTitle !== chatHistory.find(c => c.id === chatId)?.title) {
-      const success = updateChatTitle(user.id, chatId, editTitle.trim());
+  const handleRenameSubmit = async (chatId) => {
+    if (!editTitle.trim() || editTitle === chatHistory.find(c => c.id === chatId)?.title) {
+      handleRenameCancel();
+      return;
+    }
+
+    try {
+      const success = await updateChatTitle(user.id, chatId, editTitle.trim());
       if (success) {
-        refreshChatHistory();
+        await refreshChatHistory();
         // Update current chat title if it's the active one
         if (currentChatId === chatId) {
-          // This would need to be passed up to parent component
-          // For now, we'll refresh the page to update the title
+          // This would need to be communicated to parent component
+          // For now, the title will update on next page refresh
         }
+      } else {
+        setError('Failed to update chat title. Please try again.');
       }
+    } catch (error) {
+      console.error('Error updating chat title:', error);
+      setError('Failed to update chat title. Please try again.');
+    } finally {
+      setEditingChat(null);
+      setEditTitle('');
     }
-    setEditingChat(null);
-    setEditTitle('');
   };
 
   const handleRenameCancel = () => {
@@ -148,17 +180,25 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
     setActiveMenu(null);
   };
 
-  const handleDeleteConfirm = () => {
-    const success = deleteChatFromHistory(user.id, deleteModal.chatId);
-    if (success) {
-      refreshChatHistory();
-      
-      // If deleted chat was current chat, start a new one
-      if (currentChatId === deleteModal.chatId) {
-        handleNewChat();
+  const handleDeleteConfirm = async () => {
+    try {
+      const success = await deleteChatFromHistory(user.id, deleteModal.chatId);
+      if (success) {
+        await refreshChatHistory();
+        
+        // If deleted chat was current chat, start a new one
+        if (currentChatId === deleteModal.chatId) {
+          handleNewChat();
+        }
+      } else {
+        setError('Failed to delete chat. Please try again.');
       }
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+      setError('Failed to delete chat. Please try again.');
+    } finally {
+      setDeleteModal({ isOpen: false, chatId: null, chatTitle: '' });
     }
-    setDeleteModal({ isOpen: false, chatId: null, chatTitle: '' });
   };
 
   const handleDeleteCancel = () => {
@@ -218,6 +258,11 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
               T
             </div>
             <span className="text-lg font-bold">Tutortron</span>
+            {useServerStorage && (
+              <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">
+                Synced
+              </span>
+            )}
           </div>
           <button
             className="md:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -229,6 +274,19 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
             </svg>
           </button>
         </div>
+
+        {/* Error display */}
+        {error && (
+          <div className="mx-4 mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm rounded-lg">
+            {error}
+            <button 
+              onClick={() => setError(null)}
+              className="ml-2 text-red-600 dark:text-red-300 hover:text-red-800 dark:hover:text-red-100"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* New chat button */}
         <div className="p-4">
@@ -255,13 +313,33 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
 
         {/* Chat history */}
         <div className="flex-1 overflow-y-auto p-4">
-          <h3 className="text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold mb-4">
-            Chat History
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold">
+              Chat History
+            </h3>
+            <button
+              onClick={refreshChatHistory}
+              disabled={isLoadingHistory}
+              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-50"
+              title="Refresh chat history"
+            >
+              {isLoadingHistory ? (
+                <div className="animate-spin rounded-full h-3 w-3 border-b border-current"></div>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+              )}
+            </button>
+          </div>
           
-          {chatHistory.length === 0 ? (
+          {isLoadingHistory ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
+            </div>
+          ) : chatHistory.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
-              No chat history yet
+              {useServerStorage ? 'No saved chats yet' : 'No chat history yet'}
             </p>
           ) : (
             <div className="space-y-2">
@@ -298,11 +376,19 @@ const ChatSidebar = ({ user, isOpen, onClose, onNewChat, onLoadChat, currentChat
                         />
                       ) : (
                         <>
-                          <div className="font-medium text-sm text-gray-900 dark:text-white truncate mb-1">
+                          <div className="font-medium text-sm text-gray-900 dark:text-white truncate mb-1 flex items-center gap-2">
                             {truncateTitle(chat.title)}
+                            {chat.isFlagged && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full" title={`Flagged: ${chat.flagReason}`}>
+                                !
+                              </span>
+                            )}
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatDate(chat.lastUpdated)}
+                          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                            <span>{formatDate(chat.lastUpdated || chat.updated_at)}</span>
+                            {chat.messageCount > 0 && (
+                              <span className="text-gray-400">• {chat.messageCount} msgs</span>
+                            )}
                           </div>
                         </>
                       )}

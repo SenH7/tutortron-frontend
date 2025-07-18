@@ -1,4 +1,4 @@
-// src/pages/api/chat.js - Updated with better parameters
+// src/pages/api/chat.js - CORRECTED VERSION
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -6,13 +6,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { message, userId, sessionId } = req.body;
+    // FIXED: Extract all required fields from request body
+    const { message, userId, sessionId, chatId, userName, userEmail } = req.body;
     
     if (!message || !message.trim()) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Forward the request to the Python Flask backend with better parameters
+    // Forward the request to the Python Flask backend
     const backendUrl = process.env.RAG_BACKEND_URL || 'http://localhost:5001';
     
     console.log(`Forwarding chat request to: ${backendUrl}/chat`);
@@ -25,8 +26,11 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         message: message.trim(),
         userId: userId || 'anonymous',
+        userName: userName || 'Student',
+        userEmail: userEmail || 'student@example.com',
+        chatId: chatId, // FIXED: Now properly extracted from request
         sessionId: sessionId || `session_${Date.now()}`,
-        // Add better parameters that match your successful test
+        // Parameters that match your successful test
         threshold: 0.25,  // Lower threshold like in test_rag.py
         top_k: 8,        // Same as test
         verbose: true    // Enable verbose logging
@@ -49,8 +53,12 @@ export default async function handler(req, res) {
     res.status(200).json({
       success: true,
       response: data.response,
+      isFlagged: data.isFlagged || false,
+      flagReason: data.flagReason || null,
       userId: data.userId,
-      sessionId: data.sessionId
+      sessionId: data.sessionId,
+      userMessageId: data.userMessageId || null,
+      aiMessageId: data.aiMessageId || null
     });
 
   } catch (error) {
